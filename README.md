@@ -23,11 +23,9 @@ codex plugin add codex-discord-presence@codex-discord-presence
 
 ## 設定
 
-1. 在 <https://discord.com/developers/applications> 建立一個 Application，例如命名為 `Codex`。
-2. 複製該 Application 的 **Application ID**。
-3. 將 ID 貼入 `scripts/config.json` 的 `clientId`。
-4. 在 Codex 安裝並啟用本外掛，然後審核並信任其 Hook。
-5. 開啟或恢復 Codex 工作階段時，外掛會自動啟動 Discord Rich Presence。
+外掛已內建由 mushroomTW 建立的 Discord Application，使用者不需要建立 Application、申請 Application ID 或修改 `clientId`。
+
+在 Codex 安裝並啟用外掛後，審核並信任其 Hook；開啟或恢復 Codex 工作階段時，Discord Rich Presence 會自動啟動。
 
 ## 控制
 
@@ -78,4 +76,4 @@ Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫
 
 ## 限制
 
-Discord Rich Presence 必須使用你自己的 Discord Application ID，因此第一次設定無法省略。Discord 與 Codex 需以相同權限執行（兩者都不要以系統管理員身分開啟）。
+Discord 與 Codex 需以相同權限執行（兩者都不要以系統管理員身分開啟）。

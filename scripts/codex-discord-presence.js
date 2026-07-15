@@ -211,7 +211,7 @@ if (process.argv.includes('--status')) {
 
 const config = readConfig();
 if (!/^\d{17,20}$/.test(config.clientId)) {
-  console.error('請先在 scripts/config.json 填入 Discord Application ID（clientId）。');
+  console.error('外掛內建的 Discord Application ID 無效，請重新安裝外掛。');
   process.exit(1);
 }
 

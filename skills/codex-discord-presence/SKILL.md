@@ -9,7 +9,7 @@ description: 協助使用者設定、啟動、停止或診斷 Codex Discord Rich
 
 ## 操作
 
-- 先確認 `scripts/config.json` 已填入使用者自己在 Discord Developer Portal 建立的 Application ID。
+- 外掛已內建 Discord Application ID；使用者不需要到 Discord Developer Portal 建立 Application。
 - 啟動：執行 `node ./scripts/start.js`。
 - 停止：執行 `node ./scripts/stop.js`。
 - 開機／登入後自動啟動：執行 `node ./scripts/install-startup.js`。

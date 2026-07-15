@@ -21,7 +21,7 @@ function isRunning(pid) {
 fs.mkdirSync(dataDir, { recursive: true });
 const config = JSON.parse(fs.readFileSync(path.join(scriptDir, 'config.json'), 'utf8'));
 if (!/^\d{17,20}$/.test(String(config.clientId || ''))) {
-  throw new Error('請先在 scripts/config.json 填入 Discord Application ID（clientId）。');
+  throw new Error('外掛內建的 Discord Application ID 無效，請重新安裝外掛。');
 }
 
 if (fs.existsSync(pidPath)) {
