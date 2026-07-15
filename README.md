@@ -2,6 +2,8 @@
 
 在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱、專案路徑或聊天內容。
 
+[隱私權政策](PRIVACY.md) · [服務條款](TERMS.md)
+
 ## 安裝
 
 在已登入 GitHub 的終端機執行：
