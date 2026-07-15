@@ -2,6 +2,16 @@
 
 在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱、專案路徑或聊天內容。
 
+## 安裝
+
+在已登入 GitHub 的終端機執行：
+
+```powershell
+codex plugin marketplace add mushroomTW/codex-discord-presence
+```
+
+接著在 Codex 的 Plugins 畫面安裝並啟用 **Codex Discord Presence**，首次使用時審核並信任它的 Hook。重新開啟或恢復一個 Codex 工作階段後，Discord Presence 會自動啟動。
+
 ## 設定
 
 1. 在 <https://discord.com/developers/applications> 建立一個 Application，例如命名為 `Codex`。
