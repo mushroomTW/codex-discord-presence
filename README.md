@@ -37,30 +37,37 @@ The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Li
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
 
-### Project name
+### Workspace and task title
 
 ```json
 {
-  "showProject": true,
-  "projectLabel": "Workspace"
+  "showWorkspace": true,
+  "projectLabel": "Workspace",
+  "workspaceName": "",
+  "showTaskTitle": true,
+  "taskTitle": "",
+  "taskTitleFallback": "Vibe coding"
 }
 ```
 
-- Set `showProject` to `true` to show the project folder name.
-- Set it to `false` to show the configured fallback status instead.
-- Change `projectLabel` to customize the prefix.
+- Set `showWorkspace` to `true` to display the active workspace. Set it to `false` to use `details` instead.
+- Change `projectLabel` to customize the prefix, for example `Workspace`.
+- Set `workspaceName` to a non-empty value to override automatic workspace detection, for example `discord-codex`.
+- Set `showTaskTitle` to `true` to display the active Codex task title. Set it to `false` to use the fallback text instead.
+- Set `taskTitle` to a non-empty value to override automatic task-title detection.
+- Change `taskTitleFallback` to customize the text shown when no task title is available.
+- `showProject` remains supported as a legacy alias for `showWorkspace`.
 
 ### Repository button
 
 ```json
 {
   "showRepositoryButton": true,
-  "repositoryButtonLabel": "View Repository",
-  "repositoryUrl": "https://github.com/mushroomTW/codex-discord-presence"
+  "repositoryButtonLabel": "View Repository"
 }
 ```
 
-Set `showRepositoryButton` to `false` to hide the button. Access to a private repository still requires GitHub permission.
+The button uses the current project's Git `origin` remote when it points to GitHub. Set `showRepositoryButton` to `false` to hide it. Projects without a GitHub `origin` remote do not show a button, and private repositories still require GitHub permission.
 
 ## Notes
 

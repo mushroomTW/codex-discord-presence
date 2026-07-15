@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 'use strict';
+Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require('fs');
 const path = require('path');
 const dataDir = process.env.PLUGIN_DATA || __dirname;

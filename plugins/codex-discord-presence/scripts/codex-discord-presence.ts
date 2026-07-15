@@ -62,10 +62,47 @@ function discordIpcPaths(index) {
   return directories.filter(Boolean).map((directory) => path.join(directory, `discord-ipc-${index}`));
 }
 
-function findLatestProjectName() {
+function findTaskTitle(cwd) {
+  if (typeof cwd !== 'string' || !cwd) return null;
   try {
-    const projectName = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8')).projectName;
-    if (typeof projectName === 'string' && projectName) return projectName;
+    const titles = new Map(
+      fs.readFileSync(path.join(os.homedir(), '.codex', 'session_index.jsonl'), 'utf8')
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .filter((item) => typeof item.id === 'string' && typeof item.thread_name === 'string')
+        .map((item) => [item.id, item.thread_name])
+    );
+    const sessions = [];
+    const collect = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) collect(fullPath);
+        else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          sessions.push({ fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs });
+        }
+      }
+    };
+    collect(path.join(os.homedir(), '.codex', 'sessions'));
+    for (const { fullPath } of sessions.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 60)) {
+      const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
+      if (JSON.parse(firstLine)?.payload?.cwd !== cwd) continue;
+      const sessionId = fullPath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i)?.[1];
+      const title = sessionId ? titles.get(sessionId) : null;
+      if (title) return title;
+    }
+  } catch {
+    // 無法讀取索引時，保留設定檔中的預設備註。
+  }
+  return null;
+}
+
+function findLatestProject() {
+  try {
+    const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
+    if (typeof project.projectName === 'string' && project.projectName && typeof project.cwd === 'string' && project.cwd) {
+      return { name: project.projectName, cwd: project.cwd };
+    }
   } catch {}
   const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
   try {
@@ -85,7 +122,7 @@ function findLatestProjectName() {
       try {
         const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
         const cwd = JSON.parse(firstLine)?.payload?.cwd;
-        if (typeof cwd === 'string' && cwd) return path.basename(cwd);
+        if (typeof cwd === 'string' && cwd) return { name: path.basename(cwd), cwd };
       } catch {
         // 跳過尚未寫入完成或不符合預期格式的 session 檔。
       }
@@ -94,6 +131,21 @@ function findLatestProjectName() {
     // 工作階段資料暫時無法讀取時，保留原本的自訂狀態。
   }
   return null;
+}
+
+function findGitHubRepository(cwd) {
+  const result = childProcess.spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], {
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  if (result.error || result.status !== 0) return null;
+
+  const remote = result.stdout.trim();
+  const url = remote
+    .replace(/^git@github\.com:/i, 'https://github.com/')
+    .replace(/^ssh:\/\/git@github\.com\//i, 'https://github.com/')
+    .replace(/\.git$/i, '');
+  return /^https:\/\/github\.com\//i.test(url) ? url : null;
 }
 
 function writeFrame(socket, opcode, payload) {
@@ -234,14 +286,21 @@ function tick() {
     log('Codex 已關閉，已清除 Discord 活動。');
   }
   if (active) {
-    const projectName = config.showProject === false ? null : findLatestProjectName();
-    const repositoryUrl = String(config.repositoryUrl || '').trim();
-    const buttons = config.showRepositoryButton === false || !/^https:\/\//i.test(repositoryUrl)
+    const project = findLatestProject();
+    const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
+    const projectName = workspaceEnabled === false
+      ? null
+      : String(config.workspaceName || project?.name || '');
+    const taskTitle = config.showTaskTitle === false
+      ? null
+      : String(config.taskTitle || findTaskTitle(project?.cwd) || '');
+    const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
+    const buttons = config.showRepositoryButton === false || !repositoryUrl
       ? undefined
       : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
     rpc.setActivity({
-      details: String(config.details),
-      state: projectName ? `${String(config.projectLabel || 'Workspace')}: ${projectName}` : String(config.state),
+      details: projectName ? `${String(config.projectLabel || 'Workspace')}: ${projectName}` : String(config.details),
+      state: taskTitle || String(config.taskTitleFallback || config.state),
       timestamps: { start: startedAt },
       instance: false,
       buttons

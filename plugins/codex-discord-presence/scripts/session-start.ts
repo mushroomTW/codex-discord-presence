@@ -15,7 +15,17 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const cwd = JSON.parse(input).cwd;
+    const events = input.trim().split(/\r?\n/).reverse();
+    const cwd = events
+      .map((line) => {
+        try {
+          const event = JSON.parse(line);
+          return event.cwd ?? event.payload?.cwd ?? event.context?.cwd;
+        } catch {
+          return undefined;
+        }
+      })
+      .find((value) => typeof value === 'string' && value);
     if (typeof cwd === 'string' && cwd) {
       fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify({ projectName: path.basename(cwd), cwd }), 'utf8');
     }
