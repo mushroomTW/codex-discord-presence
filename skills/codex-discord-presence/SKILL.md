@@ -10,9 +10,10 @@ description: 協助使用者設定、啟動、停止或診斷 Codex Discord Rich
 ## 操作
 
 - 先確認 `scripts/config.json` 已填入使用者自己在 Discord Developer Portal 建立的 Application ID。
-- 啟動：執行 `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`。
-- 停止：執行 `powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1`。
-- 開機後自動啟動：執行 `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1`。
+- 啟動：執行 `node ./scripts/start.js`。
+- 停止：執行 `node ./scripts/stop.js`。
+- 開機／登入後自動啟動：執行 `node ./scripts/install-startup.js`。
+- 此外掛僅使用 Node.js 與 Discord IPC，支援 Windows、macOS 與 Linux。
 - 診斷：查看 `scripts/codex-discord-presence.log`，並確認 Discord 桌面版已開啟。
 
 ## 注意

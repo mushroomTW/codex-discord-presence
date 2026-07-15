@@ -33,13 +33,32 @@ function log(message) {
 }
 
 function codexIsRunning() {
-  const result = childProcess.spawnSync(
-    'tasklist',
-    ['/FI', 'IMAGENAME eq Codex.exe', '/FO', 'CSV', '/NH'],
-    { encoding: 'utf8', windowsHide: true }
-  );
+  if (process.platform === 'win32') {
+    const result = childProcess.spawnSync(
+      'tasklist',
+      ['/FI', 'IMAGENAME eq Codex.exe', '/FO', 'CSV', '/NH'],
+      { encoding: 'utf8', windowsHide: true }
+    );
+    return !result.error && result.status === 0 && result.stdout.toLowerCase().includes('codex.exe');
+  }
+
+  const result = childProcess.spawnSync('ps', ['-ax', '-o', 'pid=,command='], { encoding: 'utf8' });
   if (result.error || result.status !== 0) return false;
-  return result.stdout.toLowerCase().includes('codex.exe');
+  return result.stdout.split(/\r?\n/).some((line) => {
+    const [pid, ...command] = line.trim().split(/\s+/);
+    const value = command.join(' ');
+    return Number(pid) !== process.pid
+      && !value.includes(path.basename(__filename))
+      && /(^|[\\/\s])Codex(?:\.app[\\/]Contents[\\/]MacOS[\\/]Codex)?(?:\s|$)/i.test(value);
+  });
+}
+
+function discordIpcPaths(index) {
+  if (process.platform === 'win32') return [`\\\\?\\pipe\\discord-ipc-${index}`];
+  const directories = process.platform === 'linux'
+    ? [process.env.XDG_RUNTIME_DIR, '/tmp']
+    : ['/tmp'];
+  return directories.filter(Boolean).map((directory) => path.join(directory, `discord-ipc-${index}`));
 }
 
 function findLatestProjectName() {
@@ -100,21 +119,29 @@ class DiscordRpc {
         this.scheduleReconnect();
         return;
       }
-      const socket = net.createConnection(`\\\\?\\pipe\\discord-ipc-${index}`);
-      let settled = false;
-      socket.once('connect', () => {
-        settled = true;
+      const paths = discordIpcPaths(index);
+      const tryPath = (pathIndex) => {
+        if (pathIndex >= paths.length) {
+          tryPipe(index + 1);
+          return;
+        }
+        const socket = net.createConnection(paths[pathIndex]);
+        let settled = false;
+        socket.once('connect', () => {
+          settled = true;
         this.socket = socket;
         this.buffer = Buffer.alloc(0);
         socket.on('data', (data) => this.onData(data));
         socket.on('close', () => this.reset());
         socket.on('error', () => this.reset());
         writeFrame(socket, 0, { v: 1, client_id: this.clientId });
-        log(`已連線至 Discord IPC #${index}`);
-      });
-      socket.once('error', () => {
-        if (!settled) tryPipe(index + 1);
-      });
+          log(`已連線至 Discord IPC #${index}`);
+        });
+        socket.once('error', () => {
+          if (!settled) tryPath(pathIndex + 1);
+        });
+      };
+      tryPath(0);
     };
     tryPipe(0);
   }

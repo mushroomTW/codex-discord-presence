@@ -14,7 +14,7 @@
 
 在已登入 GitHub 的終端機執行：
 
-```powershell
+```sh
 codex plugin marketplace add mushroomTW/codex-discord-presence
 codex plugin add codex-discord-presence@codex-discord-presence
 ```
@@ -31,10 +31,13 @@ codex plugin add codex-discord-presence@codex-discord-presence
 
 ## 控制
 
-- 停止：`powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1`
-- 查看狀態：`node .\scripts\codex-discord-presence.js --status`
+- 啟動：`node ./scripts/start.js`
+- 停止：`node ./scripts/stop.js`
+- 查看狀態：`node ./scripts/codex-discord-presence.js --status`
+- 登入系統時自動啟動：`node ./scripts/install-startup.js`
+- 移除登入自動啟動：`node ./scripts/uninstall-startup.js`
 
-程式由 Codex Hook 自動啟動，每 8 秒檢查一次 Codex 是否在執行；偵測到後會更新 Discord 狀態，關閉 Codex 後會清除活動。
+程式由 Codex Hook 自動啟動，僅使用 Node.js 與 Discord IPC，不依賴 PowerShell。支援 Windows、macOS 與 Linux；每 8 秒檢查一次 Codex 是否在執行，偵測到後會更新 Discord 狀態，關閉 Codex 後會清除活動。
 
 ## 可調整文字
 

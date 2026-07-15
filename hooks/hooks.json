@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\scripts\\session-start.ps1\"",
+            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\"",
             "timeout": 10,
             "statusMessage": "啟動 Discord Rich Presence"
           }
