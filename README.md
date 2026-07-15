@@ -35,6 +35,25 @@ codex plugin marketplace add mushroomTW/codex-discord-presence
 
 編輯 `scripts/config.json` 的 `details`、`state` 與 `projectLabel`。將 `showProject` 設為 `false` 可停止顯示專案名稱。任何設定變更都需要先停止再重新啟動常駐程式。
 
+### 專案名稱顯示
+
+預設會在 Discord 顯示最近活躍 Codex 工作階段的專案資料夾名稱，例如 `Workspace: FreeClaudeDesktop`。只會顯示資料夾最後一層名稱，不會顯示完整路徑。
+
+在已安裝外掛的 `scripts/config.json` 調整下列設定：
+
+```json
+{
+  "showProject": true,
+  "projectLabel": "Workspace"
+}
+```
+
+- `showProject: true`：顯示專案名稱。
+- `showProject: false`：隱藏專案名稱，改為顯示 `state` 的自訂文字。
+- `projectLabel`：專案名稱前的文字，可改為 `Project`、`正在開發` 等。
+
+儲存後，重新啟動 Codex 工作階段或重新啟用外掛即可套用設定。外掛更新可能會覆寫安裝目錄中的設定，請在更新後確認此選項。
+
 ## 限制
 
 Discord Rich Presence 必須使用你自己的 Discord Application ID，因此第一次設定無法省略。Discord 與 Codex 需以相同權限執行（兩者都不要以系統管理員身分開啟）。

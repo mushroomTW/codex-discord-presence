@@ -1,6 +1,6 @@
 {
   "name": "codex-discord-presence",
-  "version": "0.1.0+codex.20260715175104",
+  "version": "0.1.0+codex.20260715180542",
   "description": "\u5728 Discord \u986f\u793a\u4f60\u6b63\u5728\u4f7f\u7528 Codex \u7684\u672c\u6a5f Rich Presence\u3002",
   "author": {
     "name": "mushroomMaster"
@@ -16,6 +16,7 @@
     "developerName": "mushroomMaster",
     "category": "Productivity",
     "capabilities": [],
+    "websiteURL": "https://github.com/mushroomTW",
     "privacyPolicyURL": "https://github.com/mushroomTW/codex-discord-presence/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/mushroomTW/codex-discord-presence/blob/main/TERMS.md",
     "defaultPrompt": "\u5354\u52a9\u6211\u8a2d\u5b9a Codex Discord Rich Presence\u3002"
