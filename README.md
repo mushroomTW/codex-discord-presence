@@ -1,5 +1,9 @@
 # Codex Discord Presence
 
+<p align="center">
+  <img src="assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
+</p>
+
 在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱或聊天內容；預設會將目前專案資料夾的名稱顯示到 Discord。
 
 [隱私權政策](PRIVACY.md) · [服務條款](TERMS.md)
@@ -12,9 +16,10 @@
 
 ```powershell
 codex plugin marketplace add mushroomTW/codex-discord-presence
+codex plugin add codex-discord-presence@codex-discord-presence
 ```
 
-接著在 Codex 的 Plugins 畫面安裝並啟用 **Codex Discord Presence**，首次使用時審核並信任它的 Hook。重新開啟或恢復一個 Codex 工作階段後，Discord Presence 會自動啟動。
+第一行新增市集，第二行安裝外掛。首次使用時請在 Codex 審核並信任它的 Hook；重新開啟或恢復一個 Codex 工作階段後，Discord Presence 會自動啟動。
 
 ## 設定
 
@@ -53,6 +58,20 @@ codex plugin marketplace add mushroomTW/codex-discord-presence
 - `projectLabel`：專案名稱前的文字，可改為 `Project`、`正在開發` 等。
 
 儲存後，重新啟動 Codex 工作階段或重新啟用外掛即可套用設定。外掛更新可能會覆寫安裝目錄中的設定，請在更新後確認此選項。
+
+### 儲存庫按鈕
+
+Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫。可在 `scripts/config.json` 調整：
+
+```json
+{
+  "showRepositoryButton": true,
+  "repositoryButtonLabel": "View Repository",
+  "repositoryUrl": "https://github.com/mushroomTW/codex-discord-presence"
+}
+```
+
+將 `showRepositoryButton` 設為 `false` 可隱藏按鈕。若儲存庫為私人，只有具備 GitHub 存取權的使用者能開啟連結。
 
 ## 限制
 

@@ -43,6 +43,10 @@ function codexIsRunning() {
 }
 
 function findLatestProjectName() {
+  try {
+    const projectName = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8')).projectName;
+    if (typeof projectName === 'string' && projectName) return projectName;
+  } catch {}
   const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
   try {
     const files = [];
@@ -58,9 +62,13 @@ function findLatestProjectName() {
     collect(sessionsDir);
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
     for (const { fullPath } of files.slice(0, 30)) {
-      const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
-      const cwd = JSON.parse(firstLine)?.payload?.cwd;
-      if (typeof cwd === 'string' && cwd) return path.basename(cwd);
+      try {
+        const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
+        const cwd = JSON.parse(firstLine)?.payload?.cwd;
+        if (typeof cwd === 'string' && cwd) return path.basename(cwd);
+      } catch {
+        // 跳過尚未寫入完成或不符合預期格式的 session 檔。
+      }
     }
   } catch {
     // 工作階段資料暫時無法讀取時，保留原本的自訂狀態。
@@ -199,11 +207,16 @@ function tick() {
   }
   if (active) {
     const projectName = config.showProject === false ? null : findLatestProjectName();
+    const repositoryUrl = String(config.repositoryUrl || '').trim();
+    const buttons = config.showRepositoryButton === false || !/^https:\/\//i.test(repositoryUrl)
+      ? undefined
+      : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
     rpc.setActivity({
       details: String(config.details),
       state: projectName ? `${String(config.projectLabel || 'Workspace')}: ${projectName}` : String(config.state),
       timestamps: { start: startedAt },
-      instance: false
+      instance: false,
+      buttons
     });
   }
 }

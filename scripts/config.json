@@ -4,5 +4,8 @@
   "state": "Vibe coding",
   "showProject": true,
   "projectLabel": "Workspace",
+  "showRepositoryButton": true,
+  "repositoryButtonLabel": "View Repository",
+  "repositoryUrl": "https://github.com/mushroomTW/codex-discord-presence",
   "pollIntervalMs": 8000
 }
