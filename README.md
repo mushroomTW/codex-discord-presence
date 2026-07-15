@@ -33,6 +33,8 @@ The plugin includes the Discord Application created by mushroomTW. Users do not 
 
 The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
 
+The Rich Presence service starts with a Codex session and stops when that session ends. The plugin does not create an operating-system startup entry, so it can be installed, disabled, and removed through Codex without leaving a startup task behind.
+
 ## Configuration
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
