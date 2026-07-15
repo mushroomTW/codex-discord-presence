@@ -1,0 +1,2 @@
+# Compiled runtime files are shipped for Codex and Node.js, but the source of truth is TypeScript.
+plugins/codex-discord-presence/dist/** linguist-generated=true
