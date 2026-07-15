@@ -1,7 +1,7 @@
 # Codex Discord Presence
 
 <p align="center">
-  <img src="assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
+  <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
 </p>
 
 在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱或聊天內容；預設會將目前專案資料夾的名稱顯示到 Discord。
@@ -29,23 +29,23 @@ codex plugin add codex-discord-presence@codex-discord-presence
 
 ## 控制
 
-- 啟動：`node ./scripts/start.js`
-- 停止：`node ./scripts/stop.js`
-- 查看狀態：`node ./scripts/codex-discord-presence.js --status`
-- 登入系統時自動啟動：`node ./scripts/install-startup.js`
-- 移除登入自動啟動：`node ./scripts/uninstall-startup.js`
+- 啟動：`node ./plugins/codex-discord-presence/dist/start.js`
+- 停止：`node ./plugins/codex-discord-presence/dist/stop.js`
+- 查看狀態：`node ./plugins/codex-discord-presence/dist/codex-discord-presence.js --status`
+- 登入系統時自動啟動：`node ./plugins/codex-discord-presence/scripts/install-startup.js`
+- 移除登入自動啟動：`node ./plugins/codex-discord-presence/scripts/uninstall-startup.js`
 
 程式由 Codex Hook 自動啟動，僅使用 Node.js 與 Discord IPC，不依賴 PowerShell。支援 Windows、macOS 與 Linux；每 8 秒檢查一次 Codex 是否在執行，偵測到後會更新 Discord 狀態，關閉 Codex 後會清除活動。
 
 ## 可調整文字
 
-編輯 `scripts/config.json` 的 `details`、`state` 與 `projectLabel`。將 `showProject` 設為 `false` 可停止顯示專案名稱。任何設定變更都需要先停止再重新啟動常駐程式。
+編輯外掛安裝資料夾中 `scripts/config.json` 的 `details`、`state` 與 `projectLabel`。將 `showProject` 設為 `false` 可停止顯示專案名稱。任何設定變更都需要先停止再重新啟動常駐程式。
 
 ### 專案名稱顯示
 
 預設會在 Discord 顯示最近活躍 Codex 工作階段的專案資料夾名稱，例如 `Workspace: FreeClaudeDesktop`。只會顯示資料夾最後一層名稱，不會顯示完整路徑。
 
-在已安裝外掛的 `scripts/config.json` 調整下列設定：
+在已安裝外掛資料夾的 `scripts/config.json` 調整下列設定：
 
 ```json
 {
@@ -62,7 +62,7 @@ codex plugin add codex-discord-presence@codex-discord-presence
 
 ### 儲存庫按鈕
 
-Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫。可在 `scripts/config.json` 調整：
+Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫。可在已安裝外掛資料夾的 `scripts/config.json` 調整：
 
 ```json
 {

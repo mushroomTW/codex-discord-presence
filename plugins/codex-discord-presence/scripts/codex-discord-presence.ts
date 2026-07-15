@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 'use strict';
 
 // 僅使用 Node.js 內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
