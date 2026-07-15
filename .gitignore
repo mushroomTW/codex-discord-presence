@@ -1,0 +1,7 @@
+# 執行時產生的本機檔案
+scripts/*.log
+scripts/*.pid
+
+# 編輯器與作業系統檔案
+.DS_Store
+Thumbs.db

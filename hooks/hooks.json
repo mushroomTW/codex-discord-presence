@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\scripts\\start.ps1\"",
+            "timeout": 10,
+            "statusMessage": "啟動 Discord Rich Presence"
+          }
+        ]
+      }
+    ]
+  }
+}
