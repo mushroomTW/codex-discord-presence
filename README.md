@@ -4,6 +4,8 @@
 
 [隱私權政策](PRIVACY.md) · [服務條款](TERMS.md)
 
+授權條款：[MIT License](LICENSE)
+
 ## 安裝
 
 在已登入 GitHub 的終端機執行：
