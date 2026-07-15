@@ -1,25 +1,17 @@
-# 服務條款
+# Terms of Service
 
-生效日：2026 年 7 月 16 日
+Last updated: July 16, 2026
 
-使用 Codex Discord Presence（以下稱「本外掛」）即表示你同意下列條款。
+Codex Discord Presence is provided under the MIT License.
 
-## 使用條件
+## Use of the plugin
 
-你必須自行負責 Discord 帳號、Discord Application 與 Codex 的設定，並遵守適用法律、Discord 服務條款及 OpenAI/Codex 的使用規則。
+You are responsible for using the plugin in compliance with the Discord Terms of Service, the OpenAI/Codex terms that apply to you, and applicable law. The plugin communicates with a locally running Discord desktop client through Discord IPC.
 
-## 授權與限制
+## Availability and warranty
 
-本外掛以 MIT 授權條款提供。你可以依該授權使用、修改及散布本外掛。你不得利用本外掛從事違法、侵害他人權利或違反第三方服務條款的行為。
+The plugin is provided "as is", without warranties of any kind. Discord, Codex, operating-system updates, and local security software can affect compatibility.
 
-## 免責聲明
+## Limitation of liability
 
-本外掛按「現況」提供，不保證不中斷、無錯誤或與所有 Discord、Windows 或 Codex 版本相容。使用本外掛所造成的任何直接或間接損失，作者在法律允許的最大範圍內不負責任。
-
-## 第三方服務
-
-本外掛會與 Discord 桌面版的本機 IPC 互動，但並非 Discord 或 OpenAI 的官方產品，亦未獲其背書。
-
-## 條款更新
-
-本條款若有重大更新，會透過此儲存庫發布。繼續使用本外掛即表示你接受更新後的條款。
+To the maximum extent permitted by law, the author is not liable for damages arising from use of, or inability to use, the plugin.

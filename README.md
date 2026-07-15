@@ -4,48 +4,40 @@
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
 </p>
 
-在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱或聊天內容；預設會將目前專案資料夾的名稱顯示到 Discord。
+Show a local Discord Rich Presence while the Codex desktop app is running. The plugin does not read or upload prompts, project contents, or chat messages. It can optionally show the current project folder name.
 
-[隱私權政策](PRIVACY.md) · [服務條款](TERMS.md)
+[Privacy Policy](PRIVACY.md) · [Terms of Service](TERMS.md) · [MIT License](LICENSE)
 
-授權條款：[MIT License](LICENSE)
+## Install
 
-## 安裝
-
-在已登入 GitHub 的終端機執行：
+Run these commands in a terminal authenticated with GitHub:
 
 ```sh
 codex plugin marketplace add mushroomTW/codex-discord-presence
 codex plugin add codex-discord-presence@codex-discord-presence
 ```
 
-第一行新增市集，第二行安裝外掛。首次使用時請在 Codex 審核並信任它的 Hook；重新開啟或恢復一個 Codex 工作階段後，Discord Presence 會自動啟動。
+The first command adds the marketplace and the second installs the plugin. Trust the plugin Hook when prompted, then open or resume a Codex session.
 
-## 設定
+## Setup
 
-外掛已內建由 mushroomTW 建立的 Discord Application，使用者不需要建立 Application、申請 Application ID 或修改 `clientId`。
+The plugin includes the Discord Application created by mushroomTW. Users do not need to create a Discord Application or provide an Application ID.
 
-在 Codex 安裝並啟用外掛後，審核並信任其 Hook；開啟或恢復 Codex 工作階段時，Discord Rich Presence 會自動啟動。
+## Controls
 
-## 控制
+- Start: `node ./plugins/codex-discord-presence/dist/start.js`
+- Stop: `node ./plugins/codex-discord-presence/dist/stop.js`
+- Status: `node ./plugins/codex-discord-presence/dist/codex-discord-presence.js --status`
+- Start at sign-in: `node ./plugins/codex-discord-presence/dist/install-startup.js`
+- Remove sign-in startup: `node ./plugins/codex-discord-presence/dist/uninstall-startup.js`
 
-- 啟動：`node ./plugins/codex-discord-presence/dist/start.js`
-- 停止：`node ./plugins/codex-discord-presence/dist/stop.js`
-- 查看狀態：`node ./plugins/codex-discord-presence/dist/codex-discord-presence.js --status`
-- 登入系統時自動啟動：`node ./plugins/codex-discord-presence/scripts/install-startup.js`
-- 移除登入自動啟動：`node ./plugins/codex-discord-presence/scripts/uninstall-startup.js`
+The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
 
-程式由 Codex Hook 自動啟動，僅使用 Node.js 與 Discord IPC，不依賴 PowerShell。支援 Windows、macOS 與 Linux；每 8 秒檢查一次 Codex 是否在執行，偵測到後會更新 Discord 狀態，關閉 Codex 後會清除活動。
+## Configuration
 
-## 可調整文字
+Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
 
-編輯外掛安裝資料夾中 `scripts/config.json` 的 `details`、`state` 與 `projectLabel`。將 `showProject` 設為 `false` 可停止顯示專案名稱。任何設定變更都需要先停止再重新啟動常駐程式。
-
-### 專案名稱顯示
-
-預設會在 Discord 顯示最近活躍 Codex 工作階段的專案資料夾名稱，例如 `Workspace: FreeClaudeDesktop`。只會顯示資料夾最後一層名稱，不會顯示完整路徑。
-
-在已安裝外掛資料夾的 `scripts/config.json` 調整下列設定：
+### Project name
 
 ```json
 {
@@ -54,15 +46,11 @@ codex plugin add codex-discord-presence@codex-discord-presence
 }
 ```
 
-- `showProject: true`：顯示專案名稱。
-- `showProject: false`：隱藏專案名稱，改為顯示 `state` 的自訂文字。
-- `projectLabel`：專案名稱前的文字，可改為 `Project`、`正在開發` 等。
+- Set `showProject` to `true` to show the project folder name.
+- Set it to `false` to show the configured fallback status instead.
+- Change `projectLabel` to customize the prefix.
 
-儲存後，重新啟動 Codex 工作階段或重新啟用外掛即可套用設定。外掛更新可能會覆寫安裝目錄中的設定，請在更新後確認此選項。
-
-### 儲存庫按鈕
-
-Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫。可在已安裝外掛資料夾的 `scripts/config.json` 調整：
+### Repository button
 
 ```json
 {
@@ -72,8 +60,8 @@ Discord 活動卡預設會顯示 **View Repository** 按鈕，連到此儲存庫
 }
 ```
 
-將 `showRepositoryButton` 設為 `false` 可隱藏按鈕。若儲存庫為私人，只有具備 GitHub 存取權的使用者能開啟連結。
+Set `showRepositoryButton` to `false` to hide the button. Access to a private repository still requires GitHub permission.
 
-## 限制
+## Notes
 
-Discord 與 Codex 需以相同權限執行（兩者都不要以系統管理員身分開啟）。
+Run Discord and Codex with the same privileges. On Linux and macOS, use the Discord desktop app and ensure the current user can access the Discord IPC socket.
