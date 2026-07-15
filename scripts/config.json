@@ -2,5 +2,7 @@
   "clientId": "1526976952970514583",
   "details": "Using Codex",
   "state": "Vibe coding",
+  "showProject": true,
+  "projectLabel": "Workspace",
   "pollIntervalMs": 8000
 }

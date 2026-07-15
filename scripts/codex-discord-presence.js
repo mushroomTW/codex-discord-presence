@@ -7,6 +7,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
@@ -39,6 +40,32 @@ function codexIsRunning() {
   );
   if (result.error || result.status !== 0) return false;
   return result.stdout.toLowerCase().includes('codex.exe');
+}
+
+function findLatestProjectName() {
+  const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
+  try {
+    const files = [];
+    const collect = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) collect(fullPath);
+        else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          files.push({ fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs });
+        }
+      }
+    };
+    collect(sessionsDir);
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const { fullPath } of files.slice(0, 30)) {
+      const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
+      const cwd = JSON.parse(firstLine)?.payload?.cwd;
+      if (typeof cwd === 'string' && cwd) return path.basename(cwd);
+    }
+  } catch {
+    // 工作階段資料暫時無法讀取時，保留原本的自訂狀態。
+  }
+  return null;
 }
 
 function writeFrame(socket, opcode, payload) {
@@ -171,9 +198,10 @@ function tick() {
     log('Codex 已關閉，已清除 Discord 活動。');
   }
   if (active) {
+    const projectName = config.showProject === false ? null : findLatestProjectName();
     rpc.setActivity({
       details: String(config.details),
-      state: String(config.state),
+      state: projectName ? `${String(config.projectLabel || 'Workspace')}: ${projectName}` : String(config.state),
       timestamps: { start: startedAt },
       instance: false
     });

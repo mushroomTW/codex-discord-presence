@@ -1,6 +1,6 @@
 # Codex Discord Presence
 
-在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱、專案路徑或聊天內容。
+在 Discord 桌面版開啟時，這個本機常駐程式會偵測 `Codex.exe`，並顯示「Using Codex」的 Rich Presence。它不會讀取或傳送提示、檔案名稱或聊天內容；預設會將目前專案資料夾的名稱顯示到 Discord。
 
 [隱私權政策](PRIVACY.md) · [服務條款](TERMS.md)
 
@@ -33,7 +33,7 @@ codex plugin marketplace add mushroomTW/codex-discord-presence
 
 ## 可調整文字
 
-編輯 `scripts/config.json` 的 `details` 與 `state`。任何設定變更都需要先停止再重新啟動常駐程式。
+編輯 `scripts/config.json` 的 `details`、`state` 與 `projectLabel`。將 `showProject` 設為 `false` 可停止顯示專案名稱。任何設定變更都需要先停止再重新啟動常駐程式。
 
 ## 限制
 
