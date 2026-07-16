@@ -9,7 +9,17 @@ const path = require('path');
 
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
+const sessionsPath = path.join(dataDir, 'active-sessions.json');
 fs.mkdirSync(dataDir, { recursive: true });
+
+function readSessions() {
+  try {
+    const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
+    return Array.isArray(sessions) ? sessions : [];
+  } catch {
+    return [];
+  }
+}
 
 function removeLegacyStartupEntry() {
   const file = process.platform === 'win32'
@@ -41,12 +51,18 @@ process.stdin.on('end', () => {
     const sessionId = session?.session_id ?? session?.sessionId ?? session?.id;
     const transcriptPath = session?.transcript_path ?? session?.transcriptPath ?? session?.payload?.transcript_path;
     if (typeof cwd === 'string' && cwd) {
-      fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify({
+      const activeSession = {
+        id: typeof sessionId === 'string' && sessionId ? sessionId : transcriptPath || cwd,
         projectName: path.basename(cwd),
         cwd,
         sessionId: typeof sessionId === 'string' ? sessionId : null,
-        transcriptPath: typeof transcriptPath === 'string' ? transcriptPath : null
-      }), 'utf8');
+        transcriptPath: typeof transcriptPath === 'string' ? transcriptPath : null,
+        lastActiveAt: Date.now()
+      };
+      const sessions = readSessions().filter((entry) => entry?.id !== activeSession.id).slice(-19);
+      sessions.push(activeSession);
+      fs.writeFileSync(sessionsPath, JSON.stringify(sessions), 'utf8');
+      fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify(activeSession), 'utf8');
     }
   } catch {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。

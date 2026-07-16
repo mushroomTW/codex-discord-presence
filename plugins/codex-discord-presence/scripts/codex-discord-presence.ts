@@ -18,8 +18,10 @@ fs.mkdirSync(dataDir, { recursive: true });
 // 執行中的檔案位於 dist/；設定檔則維持在 scripts/，避免讀到過期的發佈副本。
 const configPath = path.join(scriptDir, '..', 'scripts', 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
+const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
 const MAX_IPC_FRAME_SIZE = 1024 * 1024;
 const CONTEXT_SCAN_INTERVAL_MS = 30_000;
+const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const scriptPath = path.resolve(__filename);
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
@@ -30,7 +32,7 @@ let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 let fallbackProjectCache = { value: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 8000 };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -99,7 +101,18 @@ function findTaskTitle(sessionId) {
   if (taskTitleCache.sessionId === sessionId && taskTitleCache.expiresAt > Date.now()) return taskTitleCache.title;
   let title = null;
   try {
-    const lines = fs.readFileSync(path.join(os.homedir(), '.codex', 'session_index.jsonl'), 'utf8').split(/\r?\n/);
+    const indexPath = path.join(os.homedir(), '.codex', 'session_index.jsonl');
+    const stat = fs.statSync(indexPath);
+    const bytes = Math.min(stat.size, MAX_SESSION_INDEX_READ_BYTES);
+    const buffer = Buffer.alloc(bytes);
+    const descriptor = fs.openSync(indexPath, 'r');
+    try {
+      fs.readSync(descriptor, buffer, 0, bytes, stat.size - bytes);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    const text = buffer.toString('utf8');
+    const lines = (stat.size > bytes ? text.slice(text.indexOf('\n') + 1) : text).split(/\r?\n/);
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       if (!lines[index]) continue;
       try {
@@ -120,6 +133,26 @@ function findTaskTitle(sessionId) {
 }
 
 function findLatestProject() {
+  try {
+    const sessions = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-sessions.json'), 'utf8'));
+    const activeSession = Array.isArray(sessions)
+      ? sessions.filter((entry) => entry && typeof entry.cwd === 'string' && entry.cwd)
+        .sort((left, right) => {
+          const getActivityAt = (entry) => {
+            try { return entry.transcriptPath ? fs.statSync(entry.transcriptPath).mtimeMs : Number(entry.lastActiveAt || 0); } catch { return Number(entry.lastActiveAt || 0); }
+          };
+          return getActivityAt(right) - getActivityAt(left);
+        })[0]
+      : null;
+    if (activeSession) {
+      return {
+        name: typeof activeSession.projectName === 'string' && activeSession.projectName ? activeSession.projectName : path.basename(activeSession.cwd),
+        cwd: activeSession.cwd,
+        sessionId: typeof activeSession.sessionId === 'string' ? activeSession.sessionId : null,
+        transcriptPath: typeof activeSession.transcriptPath === 'string' ? activeSession.transcriptPath : null
+      };
+    }
+  } catch {}
   const activeWorkspace = findActiveWorkspace();
   if (activeWorkspace) return activeWorkspace;
   try {
@@ -224,6 +257,7 @@ class DiscordRpc {
     this.buffer = Buffer.alloc(0);
     this.ready = false;
     this.reconnectTimer = null;
+    this.reconnectAttempt = 0;
   }
 
   connect() {
@@ -268,10 +302,12 @@ class DiscordRpc {
 
   scheduleReconnect() {
     if (this.reconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * (2 ** this.reconnectAttempt));
+    this.reconnectAttempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 5000);
+    }, delay);
   }
 
   onData(data) {
@@ -307,6 +343,8 @@ class DiscordRpc {
       }
       if (payload.evt === 'READY') {
         this.ready = true;
+        this.lastActivityFingerprint = null;
+        this.reconnectAttempt = 0;
         log('Discord Rich Presence 已就緒');
       } else if (payload.evt === 'ERROR') {
         log(`Discord RPC 錯誤：${payload.data?.message || JSON.stringify(payload)}`);
@@ -316,6 +354,9 @@ class DiscordRpc {
 
   setActivity(activity) {
     if (!this.ready || !this.socket || this.socket.destroyed) return;
+    const fingerprint = JSON.stringify(activity);
+    if (this.lastActivityFingerprint === fingerprint) return;
+    this.lastActivityFingerprint = fingerprint;
     writeFrame(this.socket, 1, {
       cmd: 'SET_ACTIVITY',
       nonce: crypto.randomUUID(),
@@ -324,6 +365,7 @@ class DiscordRpc {
   }
 
   clearActivity() {
+    this.lastActivityFingerprint = null;
     this.setActivity(null);
   }
 }
@@ -332,6 +374,11 @@ function status() {
   const state = readDaemonState(dataDir);
   const running = Boolean(state && isOwnedDaemon(state));
   console.log(running ? '常駐程式正在執行。' : '常駐程式未執行。');
+  try {
+    console.log(JSON.stringify(JSON.parse(fs.readFileSync(diagnosticPath, 'utf8')), null, 2));
+  } catch {
+    console.log('尚未取得活動診斷快照。');
+  }
 }
 
 if (process.argv.includes('--status')) {
@@ -344,7 +391,7 @@ if (!instanceToken || instanceToken.length < 16) {
   process.exit(1);
 }
 
-const config = readConfig();
+let config = readConfig();
 if (!/^\d{17,20}$/.test(config.clientId)) {
   console.error('外掛內建的 Discord Application ID 無效，請重新安裝外掛。');
   process.exit(1);
@@ -355,8 +402,89 @@ writeDaemonState(dataDir, daemonState);
 const rpc = new DiscordRpc(config.clientId);
 let active = false;
 let startedAt = null;
+let dataDirWatcher = null;
+let codexStateWatcher = null;
+let scheduledTick = null;
+let configMtimeMs = 0;
+
+function refreshConfig() {
+  try {
+    const mtimeMs = fs.statSync(configPath).mtimeMs;
+    if (mtimeMs === configMtimeMs) return;
+    config = readConfig();
+    configMtimeMs = mtimeMs;
+    log('已重新載入 Discord Presence 設定。');
+  } catch (error) {
+    log(`無法重新載入設定，保留上一份有效設定：${error.message}`);
+  }
+}
+
+function scheduleTick() {
+  if (scheduledTick) return;
+  scheduledTick = setTimeout(() => {
+    scheduledTick = null;
+    tick();
+  }, 100);
+}
+
+function startWatchers() {
+  if (!dataDirWatcher) {
+    try {
+      dataDirWatcher = fs.watch(dataDir, (_eventType, filename) => {
+        if (!filename || filename === 'active-project.json' || filename === 'active-sessions.json') scheduleTick();
+      });
+    } catch {}
+  }
+  if (!codexStateWatcher) {
+    try {
+      codexStateWatcher = fs.watch(path.join(os.homedir(), '.codex'), (_eventType, filename) => {
+        if (filename === 'session_index.jsonl' || filename === '.codex-global-state.json') {
+          taskTitleCache.expiresAt = 0;
+          scheduleTick();
+        }
+      });
+    } catch {}
+  }
+}
+
+function writeDiagnostic(snapshot) {
+  try {
+    fs.writeFileSync(diagnosticPath, JSON.stringify({ updatedAt: new Date().toISOString(), ...snapshot }, null, 2), 'utf8');
+  } catch (error) {
+    log(`無法寫入活動診斷快照：${error.message}`);
+  }
+}
+
+function findActivity(transcriptPath) {
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) return 'Waiting';
+  try {
+    const stat = fs.statSync(transcriptPath);
+    const bytes = Math.min(stat.size, 65_536);
+    const buffer = Buffer.alloc(bytes);
+    const descriptor = fs.openSync(transcriptPath, 'r');
+    try {
+      fs.readSync(descriptor, buffer, 0, bytes, stat.size - bytes);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    for (const value of buffer.toString('utf8').split(/\r?\n/).reverse()) {
+      try {
+        const record = JSON.parse(value);
+        const type = `${record.type || ''}/${record.payload?.type || ''}/${record.payload?.role || ''}`;
+        if (/patch_apply_end/.test(type)) return 'Editing';
+        if (/function_call_output|custom_tool_call_output/.test(type)) return 'Reading results';
+        if (/function_call|custom_tool_call/.test(type)) return 'Running tools';
+        if (/reasoning|task_started|agent_reasoning/.test(type)) return 'Thinking';
+        if (/task_complete|agent_message/.test(type)) return 'Waiting';
+      } catch {}
+    }
+  } catch {}
+  return 'Working';
+}
 
 function tick() {
+  startWatchers();
+  refreshConfig();
   if (!pluginIsEnabled()) {
     rpc.clearActivity();
     removeDaemonState(dataDir, daemonState);
@@ -384,20 +512,35 @@ function tick() {
       ? null
       : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
     const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
+    const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
     const buttons = config.showRepositoryButton === false || !repositoryUrl
       ? undefined
       : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
-    rpc.setActivity({
-      details: projectName ? `${String(config.projectLabel || 'Workspace')}: ${projectName}` : String(config.details),
+    const activity = {
+      details: projectName
+        ? `${String(config.projectLabel || 'Workspace')}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
+        : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
       state: taskTitle || String(config.taskTitleFallback || config.state),
-      timestamps: { start: startedAt },
+      ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
       instance: false,
       buttons
+    };
+    rpc.setActivity(activity);
+    writeDiagnostic({
+      activeProject: projectName || null,
+      sessionId: project?.sessionId || null,
+      title: taskTitle || null,
+      activity: activityLabel,
+      titleSource: taskTitle ? 'session_index' : 'fallback',
+      sessionIndexWatched: Boolean(codexStateWatcher),
+      updateMode: 'file-watch with 2-second fallback poll'
     });
   }
 }
 
 function shutdown() {
+  dataDirWatcher?.close();
+  codexStateWatcher?.close();
   rpc.clearActivity();
   removeDaemonState(dataDir, daemonState);
   process.exit(0);
@@ -407,4 +550,4 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 rpc.connect();
 tick();
-setInterval(tick, Math.max(2000, Number(config.pollIntervalMs) || 8000));
+setInterval(tick, Math.max(2000, Number(config.pollIntervalMs) || 2000));

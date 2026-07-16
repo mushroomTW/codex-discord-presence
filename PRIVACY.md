@@ -2,18 +2,37 @@
 
 Last updated: July 16, 2026
 
-Codex Discord Presence runs locally on your device. It does not operate a remote service and does not collect, transmit, sell, or share personal data.
+## Overview
 
-## Local data used
+Codex Discord Presence is designed to display Codex activity in Discord through local Discord Rich Presence communication.
 
-- `scripts/config.json`, containing the bundled Discord Application ID and display preferences.
-- The Codex process state, used only to determine whether Codex is running.
-- The active project folder name when project display is enabled. Full project paths and project contents are not sent to Discord.
-- A local PID file and log file used to manage and diagnose the presence service.
+## Information Processed Locally
 
-## Discord communication
+The Plugin may read the following information locally to prepare a Rich Presence status:
 
-The plugin sends the configured Rich Presence details to the local Discord desktop application's IPC socket. No prompts, conversation content, source files, or project contents are sent.
+- The current workspace or project name, when project display is enabled.
+- Plugin configuration and process state, including a process ID and diagnostic log.
+- When task-title display is enabled, the active Codex task title or a locally configured title override.
+
+This information is processed on your device by the Plugin. Full project paths, prompts, conversation content, source files, and project contents are not used for the Presence status.
+
+## Information Shared with Discord
+
+When Discord Rich Presence is active, the Plugin sends the configured status details, state, timestamps, and optional button metadata to the Discord desktop client over its local IPC connection. If task-title display is enabled, the selected title becomes the status state. Discord then handles that presence according to its own policies and settings.
+
+Do not enable project names or repository buttons if they could reveal confidential information.
+
+## Data Collection and Storage
+
+The Plugin does not operate a remote service, collect analytics, create user accounts, or transmit data to the Plugin authors. Its local process state and logs are stored in the Plugin's managed data directory and are removed when the Plugin is uninstalled from its final scope, unless you preserve them separately.
+
+## Third-Party Services
+
+Your use of Codex and Discord is governed by their respective privacy policies. The Plugin cannot control how those services process information once it is provided to them.
+
+## Changes to This Policy
+
+This policy may be updated by publishing a revised version in this repository. Continued use of the Plugin after an update constitutes acceptance of the revised policy.
 
 ## Contact
 
