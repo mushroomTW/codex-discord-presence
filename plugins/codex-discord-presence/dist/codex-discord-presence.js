@@ -24,7 +24,7 @@ const instanceToken = process.argv
     .find((argument) => argument.startsWith('--instance-token='))
     ?.slice('--instance-token='.length);
 let repositoryCache = { cwd: null, url: null };
-let taskTitleCache = { cwd: null, title: null, expiresAt: 0 };
+let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 let fallbackProjectCache = { value: null, expiresAt: 0 };
 function readConfig() {
     const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 8000 };
@@ -86,47 +86,34 @@ function findActiveWorkspace() {
         return null;
     }
 }
-function findTaskTitle(cwd) {
-    if (typeof cwd !== 'string' || !cwd)
+function findTaskTitle(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId)
         return null;
-    if (taskTitleCache.cwd === cwd && taskTitleCache.expiresAt > Date.now())
+    if (taskTitleCache.sessionId === sessionId && taskTitleCache.expiresAt > Date.now())
         return taskTitleCache.title;
+    let title = null;
     try {
-        const titles = new Map(fs.readFileSync(path.join(os.homedir(), '.codex', 'session_index.jsonl'), 'utf8')
-            .split(/\r?\n/)
-            .filter(Boolean)
-            .map((line) => JSON.parse(line))
-            .filter((item) => typeof item.id === 'string' && typeof item.thread_name === 'string')
-            .map((item) => [item.id, item.thread_name]));
-        const sessions = [];
-        const collect = (directory) => {
-            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-                const fullPath = path.join(directory, entry.name);
-                if (entry.isDirectory())
-                    collect(fullPath);
-                else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-                    sessions.push({ fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs });
+        const lines = fs.readFileSync(path.join(os.homedir(), '.codex', 'session_index.jsonl'), 'utf8').split(/\r?\n/);
+        for (let index = lines.length - 1; index >= 0; index -= 1) {
+            if (!lines[index])
+                continue;
+            try {
+                const item = JSON.parse(lines[index]);
+                if (item.id === sessionId && typeof item.thread_name === 'string' && item.thread_name) {
+                    title = item.thread_name;
+                    break;
                 }
             }
-        };
-        collect(path.join(os.homedir(), '.codex', 'sessions'));
-        for (const { fullPath } of sessions.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 60)) {
-            const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
-            if (JSON.parse(firstLine)?.payload?.cwd !== cwd)
-                continue;
-            const sessionId = fullPath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i)?.[1];
-            const title = sessionId ? titles.get(sessionId) : null;
-            if (title) {
-                taskTitleCache = { cwd, title, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
-                return title;
+            catch {
+                // 索引最後一行可能正由 Codex 寫入，略過不完整紀錄。
             }
         }
     }
     catch {
-        // 無法讀取索引時，保留設定檔中的預設備註。
+        // 索引暫時無法讀取時，保留設定檔中的預設備註。
     }
-    taskTitleCache = { cwd, title: null, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
-    return null;
+    taskTitleCache = { sessionId, title, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
+    return title;
 }
 function findLatestProject() {
     const activeWorkspace = findActiveWorkspace();
@@ -135,7 +122,11 @@ function findLatestProject() {
     try {
         const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
         if (typeof project.projectName === 'string' && project.projectName && typeof project.cwd === 'string' && project.cwd) {
-            return { name: project.projectName, cwd: project.cwd };
+            return {
+                name: project.projectName,
+                cwd: project.cwd,
+                sessionId: typeof project.sessionId === 'string' ? project.sessionId : null
+            };
         }
     }
     catch { }
@@ -385,7 +376,7 @@ function tick() {
             : String(config.workspaceName || project?.name || '');
         const taskTitle = config.showTaskTitle === false
             ? null
-            : String(config.taskTitle || findTaskTitle(project?.cwd) || '');
+            : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
         const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
         const buttons = config.showRepositoryButton === false || !repositoryUrl
             ? undefined

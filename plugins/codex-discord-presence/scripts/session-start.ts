@@ -28,18 +28,25 @@ process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
     const events = input.trim().split(/\r?\n/).reverse();
-    const cwd = events
+    const session = events
       .map((line) => {
         try {
-          const event = JSON.parse(line);
-          return event.cwd ?? event.payload?.cwd ?? event.context?.cwd;
+          return JSON.parse(line);
         } catch {
-          return undefined;
+          return null;
         }
       })
-      .find((value) => typeof value === 'string' && value);
+      .find((event) => event && typeof (event.cwd ?? event.payload?.cwd ?? event.context?.cwd) === 'string');
+    const cwd = session?.cwd ?? session?.payload?.cwd ?? session?.context?.cwd;
+    const sessionId = session?.session_id ?? session?.sessionId ?? session?.id;
+    const transcriptPath = session?.transcript_path ?? session?.transcriptPath ?? session?.payload?.transcript_path;
     if (typeof cwd === 'string' && cwd) {
-      fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify({ projectName: path.basename(cwd), cwd }), 'utf8');
+      fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify({
+        projectName: path.basename(cwd),
+        cwd,
+        sessionId: typeof sessionId === 'string' ? sessionId : null,
+        transcriptPath: typeof transcriptPath === 'string' ? transcriptPath : null
+      }), 'utf8');
     }
   } catch {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。
