@@ -3,39 +3,51 @@
 'use strict';
 Object.defineProperty(exports, "__esModule", { value: true });
 const childProcess = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { acquireStartLock, releaseStartLock, stopLegacyDaemon, stopOwnedDaemon, writeDaemonState } = require('./daemon-state');
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
-const pidPath = path.join(dataDir, 'codex-discord-presence.pid');
-function isRunning(pid) {
-    try {
-        process.kill(pid, 0);
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
+const configPath = path.join(scriptDir, '..', 'scripts', 'config.json');
 fs.mkdirSync(dataDir, { recursive: true });
-const config = JSON.parse(fs.readFileSync(path.join(scriptDir, 'config.json'), 'utf8'));
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!/^\d{17,20}$/.test(String(config.clientId || ''))) {
     throw new Error('外掛內建的 Discord Application ID 無效，請重新安裝外掛。');
 }
-if (fs.existsSync(pidPath)) {
-    const pid = Number(fs.readFileSync(pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && isRunning(pid)) {
-        console.log('Codex Discord Presence is already running.');
-        process.exit(0);
-    }
-    fs.rmSync(pidPath, { force: true });
+if (!acquireStartLock(dataDir)) {
+    console.log('Codex Discord Presence is already starting.');
+    process.exit(0);
 }
-const child = childProcess.spawn(process.execPath, [path.join(scriptDir, 'codex-discord-presence.js')], {
-    cwd: scriptDir,
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, PLUGIN_DATA: dataDir },
-    windowsHide: true
-});
-child.unref();
-console.log('Codex Discord Presence started.');
+try {
+    const daemonScript = path.join(scriptDir, 'codex-discord-presence.js');
+    stopOwnedDaemon(dataDir);
+    stopLegacyDaemon(dataDir, daemonScript);
+    const instanceToken = crypto.randomUUID();
+    const child = childProcess.spawn(process.execPath, [daemonScript, `--instance-token=${instanceToken}`], {
+        cwd: scriptDir,
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env, PLUGIN_DATA: dataDir },
+        windowsHide: true
+    });
+    if (!Number.isInteger(child.pid))
+        throw new Error('無法取得常駐程序的 PID。');
+    try {
+        writeDaemonState(dataDir, {
+            pid: child.pid,
+            instanceToken,
+            scriptPath: path.resolve(daemonScript)
+        });
+    }
+    catch (error) {
+        child.kill();
+        throw error;
+    }
+    child.once('error', (error) => console.error(`無法啟動 Codex Discord Presence：${error.message}`));
+    child.unref();
+    console.log('Codex Discord Presence started.');
+}
+finally {
+    releaseStartLock(dataDir);
+}

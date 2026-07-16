@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test ../../tests/daemon-state.test.js"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

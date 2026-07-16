@@ -9,12 +9,23 @@ const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
+const { createRotatingLogger } = require('./shared/logger');
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
 fs.mkdirSync(dataDir, { recursive: true });
-const configPath = path.join(scriptDir, 'config.json');
-const pidPath = path.join(dataDir, 'codex-discord-presence.pid');
+// 執行中的檔案位於 dist/；設定檔則維持在 scripts/，避免讀到過期的發佈副本。
+const configPath = path.join(scriptDir, '..', 'scripts', 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
+const MAX_IPC_FRAME_SIZE = 1024 * 1024;
+const CONTEXT_SCAN_INTERVAL_MS = 30_000;
+const scriptPath = path.resolve(__filename);
+const instanceToken = process.argv
+    .find((argument) => argument.startsWith('--instance-token='))
+    ?.slice('--instance-token='.length);
+let repositoryCache = { cwd: null, url: null };
+let taskTitleCache = { cwd: null, title: null, expiresAt: 0 };
+let fallbackProjectCache = { value: null, expiresAt: 0 };
 function readConfig() {
     const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 8000 };
     try {
@@ -25,11 +36,7 @@ function readConfig() {
         throw new Error(`無法讀取 config.json：${error.message}`);
     }
 }
-function log(message) {
-    const line = `[${new Date().toISOString()}] ${message}`;
-    console.log(line);
-    fs.appendFileSync(logPath, `${line}\n`, 'utf8');
-}
+const log = createRotatingLogger(logPath);
 function codexIsRunning() {
     if (process.platform === 'win32') {
         const result = childProcess.spawnSync('tasklist', ['/FI', 'IMAGENAME eq Codex.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true });
@@ -82,6 +89,8 @@ function findActiveWorkspace() {
 function findTaskTitle(cwd) {
     if (typeof cwd !== 'string' || !cwd)
         return null;
+    if (taskTitleCache.cwd === cwd && taskTitleCache.expiresAt > Date.now())
+        return taskTitleCache.title;
     try {
         const titles = new Map(fs.readFileSync(path.join(os.homedir(), '.codex', 'session_index.jsonl'), 'utf8')
             .split(/\r?\n/)
@@ -107,13 +116,16 @@ function findTaskTitle(cwd) {
                 continue;
             const sessionId = fullPath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i)?.[1];
             const title = sessionId ? titles.get(sessionId) : null;
-            if (title)
+            if (title) {
+                taskTitleCache = { cwd, title, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
                 return title;
+            }
         }
     }
     catch {
         // 無法讀取索引時，保留設定檔中的預設備註。
     }
+    taskTitleCache = { cwd, title: null, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
     return null;
 }
 function findLatestProject() {
@@ -127,6 +139,8 @@ function findLatestProject() {
         }
     }
     catch { }
+    if (fallbackProjectCache.expiresAt > Date.now())
+        return fallbackProjectCache.value;
     const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
     try {
         const files = [];
@@ -146,8 +160,11 @@ function findLatestProject() {
             try {
                 const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
                 const cwd = JSON.parse(firstLine)?.payload?.cwd;
-                if (typeof cwd === 'string' && cwd)
-                    return { name: path.basename(cwd), cwd };
+                if (typeof cwd === 'string' && cwd) {
+                    const value = { name: path.basename(cwd), cwd };
+                    fallbackProjectCache = { value, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
+                    return value;
+                }
             }
             catch {
                 // 跳過尚未寫入完成或不符合預期格式的 session 檔。
@@ -157,28 +174,55 @@ function findLatestProject() {
     catch {
         // 工作階段資料暫時無法讀取時，保留原本的自訂狀態。
     }
+    fallbackProjectCache = { value: null, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
     return null;
 }
 function findGitHubRepository(cwd) {
+    if (repositoryCache.cwd === cwd)
+        return repositoryCache.url;
     const result = childProcess.spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], {
         encoding: 'utf8',
         windowsHide: true
     });
-    if (result.error || result.status !== 0)
+    if (result.error || result.status !== 0) {
+        repositoryCache = { cwd, url: null };
         return null;
+    }
     const remote = result.stdout.trim();
     const url = remote
         .replace(/^git@github\.com:/i, 'https://github.com/')
         .replace(/^ssh:\/\/git@github\.com\//i, 'https://github.com/')
         .replace(/\.git$/i, '');
-    return /^https:\/\/github\.com\//i.test(url) ? url : null;
+    repositoryCache = { cwd, url: /^https:\/\/github\.com\//i.test(url) ? url : null };
+    return repositoryCache.url;
 }
 function writeFrame(socket, opcode, payload) {
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
     const header = Buffer.alloc(8);
     header.writeInt32LE(opcode, 0);
     header.writeInt32LE(body.length, 4);
-    socket.write(Buffer.concat([header, body]));
+    socket.cork();
+    socket.write(header);
+    socket.write(body);
+    socket.uncork();
+}
+function readPidRecord() {
+    try {
+        const value = fs.readFileSync(pidPath, 'utf8').trim();
+        const record = value.startsWith('{') ? JSON.parse(value) : { pid: Number(value) };
+        return Number.isInteger(record.pid) && record.pid > 0 ? record : null;
+    }
+    catch {
+        return null;
+    }
+}
+function isPresenceProcess(pid) {
+    const command = process.platform === 'win32'
+        ? childProcess.spawnSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter \"ProcessId = ${pid}\").CommandLine`], { encoding: 'utf8', windowsHide: true })
+        : childProcess.spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+    return !command.error
+        && command.status === 0
+        && /codex-discord-presence\.js(?:\s|$)/i.test(command.stdout || '');
 }
 class DiscordRpc {
     constructor(clientId) {
@@ -237,13 +281,32 @@ class DiscordRpc {
         }, 5000);
     }
     onData(data) {
+        if (data.length > MAX_IPC_FRAME_SIZE + 8 || this.buffer.length > MAX_IPC_FRAME_SIZE + 8 - data.length) {
+            log(`Discord IPC 接收緩衝超過上限：${data.length}`);
+            this.buffer = Buffer.alloc(0);
+            this.socket?.destroy();
+            return;
+        }
         this.buffer = Buffer.concat([this.buffer, data]);
         while (this.buffer.length >= 8) {
             const opcode = this.buffer.readInt32LE(0);
             const length = this.buffer.readInt32LE(4);
+            if (length < 0 || length > MAX_IPC_FRAME_SIZE) {
+                log(`Discord IPC 訊框長度無效：${length}`);
+                this.socket?.destroy();
+                return;
+            }
             if (this.buffer.length < 8 + length)
                 return;
-            const payload = JSON.parse(this.buffer.subarray(8, 8 + length).toString('utf8'));
+            let payload;
+            try {
+                payload = JSON.parse(this.buffer.subarray(8, 8 + length).toString('utf8'));
+            }
+            catch (error) {
+                log(`Discord IPC 訊框無法解析：${error.message}`);
+                this.socket?.destroy();
+                return;
+            }
             this.buffer = this.buffer.subarray(8 + length);
             if (opcode === 2) {
                 log(`Discord IPC 已關閉：${payload.data?.message || JSON.stringify(payload)}`);
@@ -273,35 +336,32 @@ class DiscordRpc {
     }
 }
 function status() {
-    const running = fs.existsSync(pidPath) && (() => {
-        const pid = Number(fs.readFileSync(pidPath, 'utf8').trim());
-        try {
-            process.kill(pid, 0);
-            return true;
-        }
-        catch {
-            return false;
-        }
-    })();
+    const state = readDaemonState(dataDir);
+    const running = Boolean(state && isOwnedDaemon(state));
     console.log(running ? '常駐程式正在執行。' : '常駐程式未執行。');
 }
 if (process.argv.includes('--status')) {
     status();
     process.exit(0);
 }
+if (!instanceToken || instanceToken.length < 16) {
+    console.error('請使用 start.js 啟動 Discord Presence。');
+    process.exit(1);
+}
 const config = readConfig();
 if (!/^\d{17,20}$/.test(config.clientId)) {
     console.error('外掛內建的 Discord Application ID 無效，請重新安裝外掛。');
     process.exit(1);
 }
-fs.writeFileSync(pidPath, String(process.pid), 'utf8');
+const daemonState = { pid: process.pid, instanceToken, scriptPath };
+writeDaemonState(dataDir, daemonState);
 const rpc = new DiscordRpc(config.clientId);
 let active = false;
 let startedAt = null;
 function tick() {
     if (!pluginIsEnabled()) {
         rpc.clearActivity();
-        fs.rmSync(pidPath, { force: true });
+        removeDaemonState(dataDir, daemonState);
         setTimeout(() => process.exit(0), 250);
         return;
     }
@@ -341,7 +401,7 @@ function tick() {
 }
 function shutdown() {
     rpc.clearActivity();
-    fs.rmSync(pidPath, { force: true });
+    removeDaemonState(dataDir, daemonState);
     process.exit(0);
 }
 process.on('SIGINT', shutdown);

@@ -2,21 +2,9 @@
 // @ts-nocheck
 'use strict';
 Object.defineProperty(exports, "__esModule", { value: true });
-const fs = require('fs');
 const path = require('path');
+const { stopLegacyDaemon, stopOwnedDaemon } = require('./daemon-state');
 const dataDir = process.env.PLUGIN_DATA || __dirname;
-const pidPath = path.join(dataDir, 'codex-discord-presence.pid');
-if (!fs.existsSync(pidPath)) {
-    console.log('Codex Discord Presence is not running.');
-    process.exit(0);
-}
-const pid = Number(fs.readFileSync(pidPath, 'utf8').trim());
-try {
-    process.kill(pid, 'SIGTERM');
-}
-catch (error) {
-    if (error.code !== 'ESRCH')
-        throw error;
-}
-fs.rmSync(pidPath, { force: true });
-console.log('Codex Discord Presence stopped.');
+const daemonScript = path.join(__dirname, 'codex-discord-presence.js');
+const stopped = stopOwnedDaemon(dataDir) || stopLegacyDaemon(dataDir, daemonScript);
+console.log(stopped ? 'Codex Discord Presence stopped.' : 'Codex Discord Presence is not running.');
