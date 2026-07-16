@@ -1,6 +1,9 @@
 # 執行時產生的本機檔案
 scripts/*.log
 scripts/*.pid
+plugins/codex-discord-presence/dist/*.log
+plugins/codex-discord-presence/dist/*.state.json
+plugins/codex-discord-presence/dist/*.start.lock
 
 # 編輯器與作業系統檔案
 .DS_Store
