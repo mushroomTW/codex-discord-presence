@@ -4,9 +4,13 @@
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
 </p>
 
-Show a local Discord Rich Presence while the Codex desktop app is running. The plugin does not read or upload prompts, project contents, or chat messages. It can optionally show the current project folder name.
+Show a local Discord Rich Presence while the Codex desktop app is running. The plugin does not read or upload prompts, project contents, or chat messages. It can optionally show the active Codex workspace and task title.
 
 [Privacy Policy](PRIVACY.md) · [Terms of Service](TERMS.md) · [MIT License](LICENSE)
+
+## Example
+
+![Discord Rich Presence showing the active workspace and task title](plugins/codex-discord-presence/assets/workspace-task-example.png)
 
 ## Install
 
@@ -28,8 +32,6 @@ The plugin includes the Discord Application created by mushroomTW. Users do not 
 - Start: `node ./plugins/codex-discord-presence/dist/start.js`
 - Stop: `node ./plugins/codex-discord-presence/dist/stop.js`
 - Status: `node ./plugins/codex-discord-presence/dist/codex-discord-presence.js --status`
-- Start at sign-in: `node ./plugins/codex-discord-presence/dist/install-startup.js`
-- Remove sign-in startup: `node ./plugins/codex-discord-presence/dist/uninstall-startup.js`
 
 The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
 

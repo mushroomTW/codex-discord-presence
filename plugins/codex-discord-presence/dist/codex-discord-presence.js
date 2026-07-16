@@ -54,6 +54,22 @@ function discordIpcPaths(index) {
         : ['/tmp'];
     return directories.filter(Boolean).map((directory) => path.join(directory, `discord-ipc-${index}`));
 }
+function findActiveWorkspace() {
+    try {
+        const state = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', '.codex-global-state.json'), 'utf8'));
+        const cwd = Array.isArray(state['active-workspace-roots']) ? state['active-workspace-roots'][0] : null;
+        if (typeof cwd !== 'string' || !cwd)
+            return null;
+        const labels = state['electron-workspace-root-labels'];
+        const name = labels && typeof labels[cwd] === 'string' && labels[cwd]
+            ? labels[cwd]
+            : path.basename(cwd);
+        return { name, cwd };
+    }
+    catch {
+        return null;
+    }
+}
 function findTaskTitle(cwd) {
     if (typeof cwd !== 'string' || !cwd)
         return null;
@@ -92,6 +108,9 @@ function findTaskTitle(cwd) {
     return null;
 }
 function findLatestProject() {
+    const activeWorkspace = findActiveWorkspace();
+    if (activeWorkspace)
+        return activeWorkspace;
     try {
         const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
         if (typeof project.projectName === 'string' && project.projectName && typeof project.cwd === 'string' && project.cwd) {
