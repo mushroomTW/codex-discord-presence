@@ -54,6 +54,15 @@ function discordIpcPaths(index) {
         : ['/tmp'];
     return directories.filter(Boolean).map((directory) => path.join(directory, `discord-ipc-${index}`));
 }
+function pluginIsEnabled() {
+    try {
+        const config = fs.readFileSync(path.join(os.homedir(), '.codex', 'config.toml'), 'utf8');
+        return /^\[plugins\."codex-discord-presence@[^"\r\n]+"\]\s*\r?\n\s*enabled\s*=\s*true\s*$/mi.test(config);
+    }
+    catch {
+        return true;
+    }
+}
 function findActiveWorkspace() {
     try {
         const state = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', '.codex-global-state.json'), 'utf8'));
@@ -290,6 +299,12 @@ const rpc = new DiscordRpc(config.clientId);
 let active = false;
 let startedAt = null;
 function tick() {
+    if (!pluginIsEnabled()) {
+        rpc.clearActivity();
+        fs.rmSync(pidPath, { force: true });
+        setTimeout(() => process.exit(0), 250);
+        return;
+    }
     const codexRunning = codexIsRunning();
     if (codexRunning && !active) {
         active = true;
