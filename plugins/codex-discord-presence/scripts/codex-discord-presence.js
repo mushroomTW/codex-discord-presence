@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 // 僅使用 Node.js 內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
@@ -15,14 +14,19 @@ const { createRotatingLogger } = require('./shared/logger');
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
 fs.mkdirSync(dataDir, { recursive: true });
-// 執行中的檔案位於 dist/；設定檔則維持在 scripts/，避免讀到過期的發佈副本。
-const configPath = path.join(scriptDir, '..', 'scripts', 'config.json');
+// 純 JavaScript 執行檔與設定檔都位於 scripts/。
+const configPath = path.join(scriptDir, 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
 const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
 const MAX_IPC_FRAME_SIZE = 1024 * 1024;
 const CONTEXT_SCAN_INTERVAL_MS = 30_000;
 const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const scriptPath = path.resolve(__filename);
+const brokerStateDir = path.join(
+  process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+  'mushroomTW',
+  'discord-presence-broker'
+);
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
@@ -32,7 +36,7 @@ let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 let fallbackProjectCache = { value: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: true };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -407,6 +411,27 @@ let codexStateWatcher = null;
 let scheduledTick = null;
 let configMtimeMs = 0;
 
+function publishBrokerState(activity, activityLabel) {
+  fs.mkdirSync(brokerStateDir, { recursive: true });
+  const priority = ({ 'Running tools': 5, Editing: 4, Thinking: 3, 'Reading results': 2, Waiting: 1 })[activityLabel] || 1;
+  fs.writeFileSync(path.join(brokerStateDir, 'codex.json'), JSON.stringify({
+    source: 'codex',
+    clientId: config.clientId,
+    priority,
+    updatedAt: Date.now(),
+    activity
+  }), 'utf8');
+}
+
+function clearBrokerState() {
+  try { fs.rmSync(path.join(brokerStateDir, 'codex.json'), { force: true }); } catch {}
+}
+
+function clearPublishedActivity() {
+  if (config.useBroker !== false) clearBrokerState();
+  else rpc.clearActivity();
+}
+
 function refreshConfig() {
   try {
     const mtimeMs = fs.statSync(configPath).mtimeMs;
@@ -486,7 +511,7 @@ function tick() {
   startWatchers();
   refreshConfig();
   if (!pluginIsEnabled()) {
-    rpc.clearActivity();
+    clearPublishedActivity();
     removeDaemonState(dataDir, daemonState);
     setTimeout(() => process.exit(0), 250);
     return;
@@ -499,7 +524,7 @@ function tick() {
   } else if (!codexRunning && active) {
     active = false;
     startedAt = null;
-    rpc.clearActivity();
+    clearPublishedActivity();
     log('Codex 已關閉，已清除 Discord 活動。');
   }
   if (active) {
@@ -520,12 +545,13 @@ function tick() {
       details: projectName
         ? `${String(config.projectLabel || 'Workspace')}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
         : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
-      state: taskTitle || String(config.taskTitleFallback || config.state),
+      state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
       ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
       instance: false,
       buttons
     };
-    rpc.setActivity(activity);
+    if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
+    else rpc.setActivity(activity);
     writeDiagnostic({
       activeProject: projectName || null,
       sessionId: project?.sessionId || null,
@@ -541,13 +567,13 @@ function tick() {
 function shutdown() {
   dataDirWatcher?.close();
   codexStateWatcher?.close();
-  rpc.clearActivity();
+  clearPublishedActivity();
   removeDaemonState(dataDir, daemonState);
   process.exit(0);
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-rpc.connect();
+if (config.useBroker === false) rpc.connect();
 tick();
 setInterval(tick, Math.max(2000, Number(config.pollIntervalMs) || 2000));

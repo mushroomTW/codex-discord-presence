@@ -2,11 +2,7 @@
   "name": "codex-discord-presence",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "check": "node --check scripts/codex-discord-presence.js && node --check scripts/session-start.js && node --check scripts/start.js && node --check scripts/stop.js",
     "test": "node --test ../../tests/daemon-state.test.js"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
   }
 }

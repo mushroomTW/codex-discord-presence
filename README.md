@@ -29,9 +29,9 @@ The plugin includes the Discord Application created by mushroomTW. Users do not 
 
 ## Controls
 
-- Start: `node ./plugins/codex-discord-presence/dist/start.js`
-- Stop: `node ./plugins/codex-discord-presence/dist/stop.js`
-- Status: `node ./plugins/codex-discord-presence/dist/codex-discord-presence.js --status`
+- Start: `node ./plugins/codex-discord-presence/scripts/start.js`
+- Stop: `node ./plugins/codex-discord-presence/scripts/stop.js`
+- Status: `node ./plugins/codex-discord-presence/scripts/codex-discord-presence.js --status`
 
 The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
 
@@ -40,6 +40,8 @@ The Rich Presence service starts with a Codex session and stops when that sessio
 ## Configuration
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
+
+`useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. Set it to `false` only when using Codex on its own and the Broker is not running.
 
 ### Workspace and task title
 

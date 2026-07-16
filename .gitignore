@@ -3,6 +3,10 @@ scripts/*.log
 scripts/*.pid
 plugins/codex-discord-presence/dist/*.log
 plugins/codex-discord-presence/dist/*.state.json
+plugins/codex-discord-presence/scripts/*.log
+plugins/codex-discord-presence/scripts/*.state.json
+plugins/codex-discord-presence/scripts/*.diagnostic.json
+plugins/codex-discord-presence/scripts/*.start.lock
 plugins/codex-discord-presence/dist/*.start.lock
 
 # 編輯器與作業系統檔案

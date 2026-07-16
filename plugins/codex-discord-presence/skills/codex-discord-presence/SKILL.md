@@ -8,8 +8,8 @@ description: Configure, start, stop, or diagnose Codex Discord Rich Presence.
 ## Operations
 
 - The bundled Discord Application ID is used automatically; users do not need to create a Discord Application.
-- Start: `node ./dist/start.js`
-- Stop: `node ./dist/stop.js`
+- Start: `node ./scripts/start.js`
+- Stop: `node ./scripts/stop.js`
 - Diagnose: inspect `codex-discord-presence.log` and confirm that the Discord desktop app is running.
 
 The service is started by the Codex session hook and stopped when the session ends. It does not create an operating-system startup entry.

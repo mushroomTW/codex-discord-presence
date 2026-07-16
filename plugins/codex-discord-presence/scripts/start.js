@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 const childProcess = require('child_process');
@@ -16,7 +15,7 @@ const {
 
 const scriptDir = __dirname;
 const dataDir = process.env.PLUGIN_DATA || scriptDir;
-const configPath = path.join(scriptDir, '..', 'scripts', 'config.json');
+const configPath = path.join(scriptDir, 'config.json');
 
 fs.mkdirSync(dataDir, { recursive: true });
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
