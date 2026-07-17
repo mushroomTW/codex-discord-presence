@@ -41,7 +41,7 @@ The Rich Presence service starts with a Codex session and stops when that sessio
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
 
-`useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. Set it to `false` only when using Codex on its own and the Broker is not running.
+`useBroker` defaults to `false`, so Codex works independently through Discord IPC. Set it to `true` only after starting the shared local Broker with the same Windows privilege level as Discord.
 
 This repository includes a complete Broker at `discord-presence-broker/broker.js`; run `node discord-presence-broker/broker.js` once before starting the plugin.
 

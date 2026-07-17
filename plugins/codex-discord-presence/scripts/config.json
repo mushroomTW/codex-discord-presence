@@ -9,7 +9,7 @@
   "showTaskTitle": true,
   "showActivity": true,
   "showElapsedTime": true,
-  "useBroker": true,
+  "useBroker": false,
   "taskTitle": "",
   "taskTitleFallback": "Vibe coding",
   "showRepositoryButton": true,

@@ -36,7 +36,7 @@ let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 let fallbackProjectCache = { value: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: true };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: false };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -510,6 +510,7 @@ function findActivity(transcriptPath) {
 function tick() {
   startWatchers();
   refreshConfig();
+  if (config.useBroker === false && !rpc.ready) rpc.connect();
   if (!pluginIsEnabled()) {
     clearPublishedActivity();
     removeDaemonState(dataDir, daemonState);
