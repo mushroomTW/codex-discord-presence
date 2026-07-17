@@ -14,6 +14,5 @@
   "taskTitleFallback": "Vibe coding",
   "showRepositoryButton": true,
   "repositoryButtonLabel": "View Repository",
-  "repositoryUrl": "https://github.com/mushroomTW/codex-discord-presence",
   "pollIntervalMs": 0
 }

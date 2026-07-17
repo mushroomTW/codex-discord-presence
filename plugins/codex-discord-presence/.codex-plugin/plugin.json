@@ -1,6 +1,6 @@
 {
   "name": "codex-discord-presence",
-  "version": "0.1.0+codex.20260716061704",
+  "version": "0.1.1+codex.20260717000000",
   "description": "\u5728 Discord \u986f\u793a\u4f60\u6b63\u5728\u4f7f\u7528 Codex \u7684\u672c\u6a5f Rich Presence\u3002",
   "author": {
     "name": "mushroomMaster"

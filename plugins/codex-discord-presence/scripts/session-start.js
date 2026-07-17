@@ -5,7 +5,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { isWorkspaceCwd, pruneSessions, readSessions } = require('./session-state');
+const { isWorkspaceCwd, pruneSessions, readSessions, writeJsonAtomic } = require('./session-state');
 
 const scriptDir = __dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
@@ -57,8 +57,8 @@ process.stdin.on('end', () => {
       const sessions = pruneSessions(readSessions(sessionsPath))
         .filter((entry) => entry?.id !== activeSession.id).slice(-19);
       sessions.push(activeSession);
-      fs.writeFileSync(sessionsPath, JSON.stringify(sessions), 'utf8');
-      fs.writeFileSync(path.join(dataDir, 'active-project.json'), JSON.stringify(activeSession), 'utf8');
+      writeJsonAtomic(sessionsPath, sessions);
+      writeJsonAtomic(path.join(dataDir, 'active-project.json'), activeSession);
     }
   } catch {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。

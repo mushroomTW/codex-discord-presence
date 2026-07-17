@@ -55,9 +55,9 @@ Edit `scripts/config.json` inside the installed plugin directory, then restart t
 
 Content updates are event-driven by default (`pollIntervalMs: 0`). Set `pollIntervalMs` to a positive millisecond value only when a filesystem watcher is unreliable and a fallback poll is needed.
 
-`useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. Start the Broker with the same Windows privilege level as Discord; set it to `false` only for direct IPC mode.
+`useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. The plugin bundles the Broker at `scripts/broker.js` and the daemon starts it automatically when no Broker heartbeat is present, so no manual step is required. The Broker enforces a single running instance, so Claude and Codex can both enable it safely. Set `useBroker` to `false` only for direct IPC mode.
 
-This repository includes a complete Broker at `discord-presence-broker/broker.js`; run `node discord-presence-broker/broker.js` once before starting the plugin.
+This repository also includes a standalone copy of the Broker at `discord-presence-broker/broker.js` for running it manually with `node discord-presence-broker/broker.js`.
 
 ### Workspace and task title
 

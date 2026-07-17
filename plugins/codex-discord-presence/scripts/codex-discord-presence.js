@@ -8,9 +8,10 @@ const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
+const { isFreshSession, isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
 const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
 const { createRotatingLogger } = require('./shared/logger');
+const { classifyActivity } = require('./activity-classifier');
 
 const scriptDir = __dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
@@ -32,6 +33,9 @@ const brokerStateDir = path.join(
   'mushroomTW',
   'discord-presence-broker'
 );
+const brokerHeartbeatPath = path.join(brokerStateDir, 'broker.json');
+const brokerScriptPath = path.join(scriptDir, 'broker.js');
+const BROKER_STALE_MS = 15_000;
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
@@ -60,9 +64,33 @@ function discordIpcPaths(index) {
 }
 
 function pluginIsEnabled() {
+  // 外掛可能有多個安裝來源區段（例如 @personal 與 marketplace 版）；
+  // 任一區段未明確寫入 enabled = false 即視為啟用，全部停用時 daemon 才自我終止。
+  // 逐行判斷而非整段 regex，避免 TOML 格式差異（空行、鍵順序）造成誤判。
   try {
     const config = fs.readFileSync(path.join(os.homedir(), '.codex', 'config.toml'), 'utf8');
-    return /^\[plugins\."codex-discord-presence@[^"\r\n]+"\]\s*\r?\n\s*enabled\s*=\s*true\s*$/mi.test(config);
+    let sawSection = false;
+    let inPluginSection = false;
+    let sectionDisabled = false;
+    let anyEnabled = false;
+    const closeSection = () => {
+      if (inPluginSection && !sectionDisabled) anyEnabled = true;
+    };
+    for (const line of config.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('[')) {
+        closeSection();
+        inPluginSection = /^\[plugins\."codex-discord-presence@[^"]+"\]$/i.test(trimmed);
+        if (inPluginSection) {
+          sawSection = true;
+          sectionDisabled = false;
+        }
+      } else if (inPluginSection && /^enabled\s*=\s*false\s*(?:#.*)?$/i.test(trimmed)) {
+        sectionDisabled = true;
+      }
+    }
+    closeSection();
+    return !sawSection || anyEnabled;
   } catch {
     return true;
   }
@@ -135,7 +163,8 @@ function findLatestProject() {
   if (activeWorkspace) return activeWorkspace;
   try {
     const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
-    if (typeof project.projectName === 'string' && project.projectName && isWorkspaceCwd(project.cwd)) {
+    // 回退檔也必須通過新鮮度檢查，避免永久顯示過期的 Workspace。
+    if (typeof project.projectName === 'string' && project.projectName && isFreshSession(project)) {
       return {
         name: project.projectName,
         cwd: project.cwd,
@@ -177,23 +206,8 @@ function writeFrame(socket, opcode, payload) {
   socket.uncork();
 }
 
-function readPidRecord() {
-  try {
-    const value = fs.readFileSync(pidPath, 'utf8').trim();
-    const record = value.startsWith('{') ? JSON.parse(value) : { pid: Number(value) };
-    return Number.isInteger(record.pid) && record.pid > 0 ? record : null;
-  } catch {
-    return null;
-  }
-}
-
-function isPresenceProcess(pid) {
-  const command = process.platform === 'win32'
-    ? childProcess.spawnSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter \"ProcessId = ${pid}\").CommandLine`], { encoding: 'utf8', windowsHide: true })
-    : childProcess.spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
-  return !command.error
-    && command.status === 0
-    && /codex-discord-presence\.js(?:\s|$)/i.test(command.stdout || '');
+function truncate(value, maximumLength) {
+  return String(value).slice(0, maximumLength);
 }
 
 class DiscordRpc {
@@ -314,6 +328,25 @@ class DiscordRpc {
     this.lastActivityFingerprint = null;
     this.setActivity(null);
   }
+
+  disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempt = 0;
+    this.lastActivityFingerprint = null;
+    const socket = this.socket;
+    this.socket = null;
+    this.ready = false;
+    if (socket) {
+      // 移除監聽器避免 close 事件觸發自動重連。
+      socket.removeAllListeners('close');
+      socket.removeAllListeners('error');
+      socket.on('error', () => {});
+      socket.destroy();
+    }
+  }
 }
 
 function status() {
@@ -357,6 +390,34 @@ let brokerHeartbeatTimer = null;
 let configMtimeMs = 0;
 let lastBrokerActivity = null;
 let lastBrokerActivityLabel = null;
+let lastUseBroker = null;
+let brokerSpawnedAt = 0;
+
+function isBrokerAlive() {
+  try {
+    const heartbeat = JSON.parse(fs.readFileSync(brokerHeartbeatPath, 'utf8'));
+    return Date.now() - Number(heartbeat.updatedAt || 0) < BROKER_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function ensureBroker() {
+  if (config.useBroker === false || isBrokerAlive()) return;
+  if (Date.now() - brokerSpawnedAt < BROKER_STALE_MS) return;
+  brokerSpawnedAt = Date.now();
+  try {
+    childProcess.spawn(process.execPath, [brokerScriptPath], {
+      cwd: scriptDir,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    }).unref();
+    log('已啟動共享 Discord Presence Broker。');
+  } catch (error) {
+    log(`無法啟動共享 Broker：${error.message}`);
+  }
+}
 
 function publishBrokerState(activity, activityLabel) {
   lastBrokerActivity = activity;
@@ -426,8 +487,9 @@ function scheduleOptionalPoll() {
 function startBrokerHeartbeat() {
   if (brokerHeartbeatTimer) return;
   brokerHeartbeatTimer = setInterval(() => {
-    if (config.useBroker !== false && lastBrokerActivity) {
-      publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+    if (config.useBroker !== false) {
+      ensureBroker();
+      if (lastBrokerActivity) publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
     }
   }, 10_000);
 }
@@ -479,25 +541,27 @@ function findActivity(transcriptPath) {
     } finally {
       fs.closeSync(descriptor);
     }
-    for (const value of buffer.toString('utf8').split(/\r?\n/).reverse()) {
-      try {
-        const record = JSON.parse(value);
-        const type = `${record.type || ''}/${record.payload?.type || ''}/${record.payload?.role || ''}`;
-        if (/patch_apply_end/.test(type)) return 'Editing';
-        if (/function_call_output|custom_tool_call_output/.test(type)) return 'Reading results';
-        if (/function_call|custom_tool_call/.test(type)) return 'Running tools';
-        if (/reasoning|task_started|agent_reasoning/.test(type)) return 'Thinking';
-        if (/task_complete|agent_message/.test(type)) return 'Waiting';
-      } catch {}
-    }
-  } catch {}
-  return 'Working';
+    return classifyActivity(buffer.toString('utf8'));
+  } catch {
+    return 'Working';
+  }
 }
 
 function tick() {
   startWatchers();
   refreshConfig();
-  if (config.useBroker === false && !rpc.ready) rpc.connect();
+  const useBroker = config.useBroker !== false;
+  if (lastUseBroker === true && !useBroker) {
+    // 從 Broker 模式切回直連時，立即撤下 Broker 端的舊狀態。
+    clearBrokerState();
+  }
+  lastUseBroker = useBroker;
+  if (!useBroker) {
+    if (!rpc.ready) rpc.connect();
+  } else {
+    if (rpc.socket || rpc.reconnectTimer) rpc.disconnect();
+    ensureBroker();
+  }
   if (!pluginIsEnabled()) {
     clearPublishedActivity();
     removeDaemonState(dataDir, daemonState);
@@ -515,7 +579,7 @@ function tick() {
   const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
   const projectName = workspaceEnabled === false
     ? null
-    : String(config.workspaceName || project?.name || '');
+    : truncate(config.workspaceName || project?.name || '', 60);
   const taskTitle = config.showTaskTitle === false
     ? null
     : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
@@ -523,12 +587,13 @@ function tick() {
   const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
   const buttons = config.showRepositoryButton === false || !repositoryUrl
     ? undefined
-    : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
+    : [{ label: truncate(config.repositoryButtonLabel || 'View Repository', 32), url: repositoryUrl }];
+  // Discord 對 details 與 state 的長度上限為 128 字元。
   const activity = {
-    details: projectName
-      ? `${String(config.projectLabel || 'Workspace')}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
-      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
-    state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
+    details: truncate(projectName
+      ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
+      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`, 128),
+    state: truncate(taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state), 128),
     ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
     instance: false,
     buttons
@@ -561,6 +626,7 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 if (config.useBroker === false) rpc.connect();
+else ensureBroker();
 tick();
 scheduleOptionalPoll();
 startBrokerHeartbeat();
