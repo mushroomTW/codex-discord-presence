@@ -51,27 +51,6 @@ function readConfig() {
 
 const log = createRotatingLogger(logPath);
 
-function codexIsRunning() {
-  if (process.platform === 'win32') {
-    const result = childProcess.spawnSync(
-      'tasklist',
-      ['/FI', 'IMAGENAME eq Codex.exe', '/FO', 'CSV', '/NH'],
-      { encoding: 'utf8', windowsHide: true }
-    );
-    return !result.error && result.status === 0 && result.stdout.toLowerCase().includes('codex.exe');
-  }
-
-  const result = childProcess.spawnSync('ps', ['-ax', '-o', 'pid=,command='], { encoding: 'utf8' });
-  if (result.error || result.status !== 0) return false;
-  return result.stdout.split(/\r?\n/).some((line) => {
-    const [pid, ...command] = line.trim().split(/\s+/);
-    const value = command.join(' ');
-    return Number(pid) !== process.pid
-      && !value.includes(path.basename(__filename))
-      && /(^|[\\/\s])Codex(?:\.app[\\/]Contents[\\/]MacOS[\\/]Codex)?(?:\s|$)/i.test(value);
-  });
-}
-
 function discordIpcPaths(index) {
   if (process.platform === 'win32') return [`\\\\?\\pipe\\discord-ipc-${index}`];
   const directories = process.platform === 'linux'
@@ -480,52 +459,46 @@ function tick() {
     setTimeout(() => process.exit(0), 250);
     return;
   }
-  const codexRunning = codexIsRunning();
-  if (codexRunning && !active) {
+  // 與 Claude 外掛一致：daemon 由 Codex 工作階段 Hook 啟動，存活期間必須至少顯示泛用活動。
+  // 不依賴 tasklist 偵測，避免 Windows 權限或程序名稱差異造成完全沒有 Discord 動態。
+  if (!active) {
     active = true;
     startedAt = Math.floor(Date.now() / 1000);
-    log('偵測到 Codex，正在更新 Discord 活動。');
-  } else if (!codexRunning && active) {
-    active = false;
-    startedAt = null;
-    clearPublishedActivity();
-    log('Codex 已關閉，已清除 Discord 活動。');
+    log('Codex Discord Presence daemon 已啟動，正在更新 Discord 活動。');
   }
-  if (active) {
-    const project = findLatestProject();
-    const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
-    const projectName = workspaceEnabled === false
-      ? null
-      : String(config.workspaceName || project?.name || '');
-    const taskTitle = config.showTaskTitle === false
-      ? null
-      : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
-    const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
-    const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
-    const buttons = config.showRepositoryButton === false || !repositoryUrl
-      ? undefined
-      : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
-    const activity = {
-      details: projectName
-        ? `${String(config.projectLabel || 'Workspace')}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
-        : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
-      state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
-      ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
-      instance: false,
-      buttons
-    };
-    if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
-    else rpc.setActivity(activity);
-    writeDiagnostic({
-      activeProject: projectName || null,
-      sessionId: project?.sessionId || null,
-      title: taskTitle || null,
-      activity: activityLabel,
-      titleSource: taskTitle ? 'session_index' : 'fallback',
-      sessionIndexWatched: Boolean(codexStateWatcher),
-      updateMode: 'file-watch with 2-second fallback poll'
-    });
-  }
+  const project = findLatestProject();
+  const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
+  const projectName = workspaceEnabled === false
+    ? null
+    : String(config.workspaceName || project?.name || '');
+  const taskTitle = config.showTaskTitle === false
+    ? null
+    : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
+  const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
+  const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
+  const buttons = config.showRepositoryButton === false || !repositoryUrl
+    ? undefined
+    : [{ label: String(config.repositoryButtonLabel || 'View Repository').slice(0, 32), url: repositoryUrl }];
+  const activity = {
+    details: projectName
+      ? `${String(config.projectLabel || 'Workspace')}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
+      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
+    state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
+    ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
+    instance: false,
+    buttons
+  };
+  if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
+  else rpc.setActivity(activity);
+  writeDiagnostic({
+    activeProject: projectName || null,
+    sessionId: project?.sessionId || null,
+    title: taskTitle || null,
+    activity: activityLabel,
+    titleSource: taskTitle ? 'session_index' : 'fallback',
+    sessionIndexWatched: Boolean(codexStateWatcher),
+    updateMode: 'file-watch with 2-second fallback poll'
+  });
 }
 
 function shutdown() {
