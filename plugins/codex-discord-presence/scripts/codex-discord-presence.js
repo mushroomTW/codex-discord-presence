@@ -36,9 +36,12 @@ const brokerStateDir = path.join(
 const brokerHeartbeatPath = path.join(brokerStateDir, 'broker.json');
 const brokerScriptPath = path.join(scriptDir, 'broker.js');
 const BROKER_STALE_MS = 15_000;
-// Codex 若被強制關閉（當機、工作管理員結束）不會觸發 SessionEnd hook，daemon 就無法被 stop.js 關閉；
-// 這裡用「太久沒有任何 session 訊號」作為與 tasklist 偵測無關的保底自我關閉機制。
+// Codex 若被強制關閉（當機、工作管理員結束）不會觸發 SessionEnd hook。
+// Windows 會額外監看 Codex Desktop 宿主，並以 session 訊號閒置時間作為跨平台保底。
 const DAEMON_IDLE_SHUTDOWN_MS = 2 * 60 * 60 * 1000;
+const HOST_CHECK_INTERVAL_MS = 1_000;
+const HOST_MISSING_LIMIT = 3;
+const WINDOWS_HOST_IMAGE_NAMES = ['codex.exe'];
 const daemonStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
@@ -391,6 +394,8 @@ let configWatcher = null;
 let scheduledTick = null;
 let optionalPollTimer = null;
 let brokerHeartbeatTimer = null;
+let hostProcessTimer = null;
+let consecutiveMissingHostChecks = 0;
 let configMtimeMs = 0;
 let lastBrokerActivity = null;
 let lastBrokerActivityLabel = null;
@@ -492,6 +497,38 @@ function startBrokerHeartbeat() {
   if (brokerHeartbeatTimer) return;
   // 呼叫 tick() 而非重發快取內容，確保沒有檔案變動觸發時，session 過期（TTL）與 daemon 閒置逾時仍會定期被重新評估。
   brokerHeartbeatTimer = setInterval(() => tick(), 10_000);
+}
+
+function isWindowsHostRunning() {
+  for (const imageName of WINDOWS_HOST_IMAGE_NAMES) {
+    const result = childProcess.spawnSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], {
+      encoding: 'utf8',
+      timeout: 500,
+      windowsHide: true
+    });
+    if (result.error || result.status !== 0) return null;
+    if (result.stdout.toLocaleLowerCase().includes(`"${imageName.toLocaleLowerCase()}"`)) return true;
+  }
+  return false;
+}
+
+function checkHostProcess() {
+  const running = isWindowsHostRunning();
+  if (running === null) return;
+  if (running) {
+    consecutiveMissingHostChecks = 0;
+    return;
+  }
+  consecutiveMissingHostChecks += 1;
+  if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {
+    log('連續 3 秒找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
+    shutdown();
+  }
+}
+
+function startHostMonitor() {
+  if (process.platform !== 'win32' || hostProcessTimer) return;
+  hostProcessTimer = setInterval(checkHostProcess, HOST_CHECK_INTERVAL_MS);
 }
 
 function lastSessionSignalAt() {
@@ -639,6 +676,7 @@ function shutdown() {
   if (scheduledTick) clearTimeout(scheduledTick);
   if (optionalPollTimer) clearTimeout(optionalPollTimer);
   if (brokerHeartbeatTimer) clearInterval(brokerHeartbeatTimer);
+  if (hostProcessTimer) clearInterval(hostProcessTimer);
   clearPublishedActivity();
   removeDaemonState(dataDir, daemonState);
   process.exit(0);
@@ -651,3 +689,4 @@ else ensureBroker();
 tick();
 scheduleOptionalPoll();
 startBrokerHeartbeat();
+startHostMonitor();
