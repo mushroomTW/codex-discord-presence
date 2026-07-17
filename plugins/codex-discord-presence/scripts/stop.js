@@ -2,10 +2,15 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { stopLegacyDaemon, stopOwnedDaemon } = require('./daemon-state');
 
-const dataDir = process.env.PLUGIN_DATA || __dirname;
+const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
+  process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+  'mushroomTW',
+  'codex-discord-presence'
+);
 const daemonScript = path.join(__dirname, 'codex-discord-presence.js');
 const sessionsPath = path.join(dataDir, 'active-sessions.json');
 let input = '';
