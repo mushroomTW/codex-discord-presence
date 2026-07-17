@@ -12,3 +12,4 @@ plugins/codex-discord-presence/dist/*.start.lock
 # 編輯器與作業系統檔案
 .DS_Store
 Thumbs.db
+.omc
