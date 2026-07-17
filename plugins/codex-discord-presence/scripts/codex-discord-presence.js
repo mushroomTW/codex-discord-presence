@@ -627,7 +627,7 @@ function tick() {
     return;
   }
   // 與 Claude 外掛一致：daemon 由 Codex 工作階段 Hook 啟動，存活期間必須至少顯示泛用活動。
-  // 不依賴 tasklist 偵測，避免 Windows 權限或程序名稱差異造成完全沒有 Discord 動態。
+  // Windows 宿主監看僅決定 daemon 是否結束；查詢失敗時保守維持這個泛用活動。
   if (!active) {
     active = true;
     startedAt = Math.floor(Date.now() / 1000);
