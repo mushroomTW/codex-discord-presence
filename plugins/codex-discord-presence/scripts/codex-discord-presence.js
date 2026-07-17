@@ -40,7 +40,7 @@ let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: false };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: true };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
