@@ -1,8 +1,0 @@
-{
-  "name": "codex-discord-presence",
-  "private": true,
-  "scripts": {
-    "check": "node --check scripts/codex-discord-presence.js && node --check scripts/session-start.js && node --check scripts/start.js && node --check scripts/stop.js",
-    "test": "node --test ../../tests/daemon-state.test.js ../../tests/session-state.test.js"
-  }
-}

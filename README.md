@@ -1,5 +1,15 @@
 # Codex Discord Presence
 
+## 前置需求
+
+使用此外掛前，請先安裝 **Node.js LTS**（建議 20 以上），因為 Plugin Hook 與 Discord Presence daemon 都透過 `node` 執行。安裝完成後，在終端機確認：
+
+```text
+node --version
+```
+
+若找不到 `node` 指令，請先安裝 Node.js 並重新開啟 Codex。
+
 <p align="center">
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
 </p>
