@@ -8,11 +8,16 @@ const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const { isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
 const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
 const { createRotatingLogger } = require('./shared/logger');
 
 const scriptDir = __dirname;
-const dataDir = process.env.PLUGIN_DATA || scriptDir;
+const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
+  process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+  'mushroomTW',
+  'codex-discord-presence'
+);
 fs.mkdirSync(dataDir, { recursive: true });
 // 純 JavaScript 執行檔與設定檔都位於 scripts/。
 const configPath = path.join(scriptDir, 'config.json');
@@ -33,7 +38,6 @@ const instanceToken = process.argv
 
 let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
-let fallbackProjectCache = { value: null, expiresAt: 0 };
 
 function readConfig() {
   const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: false };
@@ -89,7 +93,7 @@ function findActiveWorkspace() {
   try {
     const state = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', '.codex-global-state.json'), 'utf8'));
     const cwd = Array.isArray(state['active-workspace-roots']) ? state['active-workspace-roots'][0] : null;
-    if (typeof cwd !== 'string' || !cwd) return null;
+    if (!isWorkspaceCwd(cwd)) return null;
     const labels = state['electron-workspace-root-labels'];
     const name = labels && typeof labels[cwd] === 'string' && labels[cwd]
       ? labels[cwd]
@@ -138,16 +142,7 @@ function findTaskTitle(sessionId) {
 
 function findLatestProject() {
   try {
-    const sessions = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-sessions.json'), 'utf8'));
-    const activeSession = Array.isArray(sessions)
-      ? sessions.filter((entry) => entry && typeof entry.cwd === 'string' && entry.cwd)
-        .sort((left, right) => {
-          const getActivityAt = (entry) => {
-            try { return entry.transcriptPath ? fs.statSync(entry.transcriptPath).mtimeMs : Number(entry.lastActiveAt || 0); } catch { return Number(entry.lastActiveAt || 0); }
-          };
-          return getActivityAt(right) - getActivityAt(left);
-        })[0]
-      : null;
+    const activeSession = selectActiveSession(readSessions(path.join(dataDir, 'active-sessions.json')));
     if (activeSession) {
       return {
         name: typeof activeSession.projectName === 'string' && activeSession.projectName ? activeSession.projectName : path.basename(activeSession.cwd),
@@ -161,7 +156,7 @@ function findLatestProject() {
   if (activeWorkspace) return activeWorkspace;
   try {
     const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
-    if (typeof project.projectName === 'string' && project.projectName && typeof project.cwd === 'string' && project.cwd) {
+    if (typeof project.projectName === 'string' && project.projectName && isWorkspaceCwd(project.cwd)) {
       return {
         name: project.projectName,
         cwd: project.cwd,
@@ -169,38 +164,6 @@ function findLatestProject() {
       };
     }
   } catch {}
-  if (fallbackProjectCache.expiresAt > Date.now()) return fallbackProjectCache.value;
-  const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
-  try {
-    const files = [];
-    const collect = (directory) => {
-      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        const fullPath = path.join(directory, entry.name);
-        if (entry.isDirectory()) collect(fullPath);
-        else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-          files.push({ fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs });
-        }
-      }
-    };
-    collect(sessionsDir);
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    for (const { fullPath } of files.slice(0, 30)) {
-      try {
-        const firstLine = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/, 1)[0];
-        const cwd = JSON.parse(firstLine)?.payload?.cwd;
-        if (typeof cwd === 'string' && cwd) {
-          const value = { name: path.basename(cwd), cwd };
-          fallbackProjectCache = { value, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
-          return value;
-        }
-      } catch {
-        // 跳過尚未寫入完成或不符合預期格式的 session 檔。
-      }
-    }
-  } catch {
-    // 工作階段資料暫時無法讀取時，保留原本的自訂狀態。
-  }
-  fallbackProjectCache = { value: null, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
   return null;
 }
 

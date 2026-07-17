@@ -4,6 +4,7 @@
 const childProcess = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
   acquireStartLock,
@@ -14,7 +15,11 @@ const {
 } = require('./daemon-state');
 
 const scriptDir = __dirname;
-const dataDir = process.env.PLUGIN_DATA || scriptDir;
+const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
+  process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+  'mushroomTW',
+  'codex-discord-presence'
+);
 const configPath = path.join(scriptDir, 'config.json');
 
 fs.mkdirSync(dataDir, { recursive: true });
@@ -30,6 +35,10 @@ if (!acquireStartLock(dataDir)) {
 
 try {
   const daemonScript = path.join(scriptDir, 'codex-discord-presence.js');
+  if (require('./daemon-state').isOwnedDaemon(require('./daemon-state').readDaemonState(dataDir))) {
+    console.log('Codex Discord Presence is already running.');
+    process.exit(0);
+  }
   stopOwnedDaemon(dataDir);
   stopLegacyDaemon(dataDir, daemonScript);
   const instanceToken = crypto.randomUUID();
@@ -37,7 +46,7 @@ try {
     cwd: scriptDir,
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, PLUGIN_DATA: dataDir },
+    env: { ...process.env, CODEX_PRESENCE_DATA: dataDir },
     windowsHide: true
   });
   if (!Number.isInteger(child.pid)) throw new Error('無法取得常駐程序的 PID。');

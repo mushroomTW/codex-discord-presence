@@ -37,6 +37,8 @@ The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Li
 
 The Rich Presence service starts with a Codex session and stops when that session ends. The plugin does not create an operating-system startup entry, so it can be installed, disabled, and removed through Codex without leaving a startup task behind.
 
+Codex 會將 Presence 工作階段資料存放於單一共用本機目錄。只有近期、且不位於使用者家目錄或 Codex 資料目錄內的工作階段才會顯示 Workspace；否則保留泛用 Presence，不會暴露 Windows 使用者名稱。
+
 ## Configuration
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
