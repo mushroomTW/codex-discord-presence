@@ -40,7 +40,7 @@ let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 2000, showActivity: true, showElapsedTime: true, useBroker: true };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 0, showActivity: true, showElapsedTime: true, useBroker: true };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -350,10 +350,17 @@ let active = false;
 let startedAt = null;
 let dataDirWatcher = null;
 let codexStateWatcher = null;
+let configWatcher = null;
 let scheduledTick = null;
+let optionalPollTimer = null;
+let brokerHeartbeatTimer = null;
 let configMtimeMs = 0;
+let lastBrokerActivity = null;
+let lastBrokerActivityLabel = null;
 
 function publishBrokerState(activity, activityLabel) {
+  lastBrokerActivity = activity;
+  lastBrokerActivityLabel = activityLabel;
   fs.mkdirSync(brokerStateDir, { recursive: true });
   const priority = ({ 'Running tools': 5, Editing: 4, Thinking: 3, 'Reading results': 2, Waiting: 1 })[activityLabel] || 1;
   fs.writeFileSync(path.join(brokerStateDir, 'codex.json'), JSON.stringify({
@@ -366,6 +373,8 @@ function publishBrokerState(activity, activityLabel) {
 }
 
 function clearBrokerState() {
+  lastBrokerActivity = null;
+  lastBrokerActivityLabel = null;
   try { fs.rmSync(path.join(brokerStateDir, 'codex.json'), { force: true }); } catch {}
 }
 
@@ -380,6 +389,7 @@ function refreshConfig() {
     if (mtimeMs === configMtimeMs) return;
     config = readConfig();
     configMtimeMs = mtimeMs;
+    scheduleOptionalPoll();
     log('已重新載入 Discord Presence 設定。');
   } catch (error) {
     log(`無法重新載入設定，保留上一份有效設定：${error.message}`);
@@ -392,6 +402,34 @@ function scheduleTick() {
     scheduledTick = null;
     tick();
   }, 100);
+}
+
+function optionalPollIntervalMs() {
+  const value = Number(config.pollIntervalMs);
+  return Number.isFinite(value) && value > 0 ? Math.max(500, value) : 0;
+}
+
+function scheduleOptionalPoll() {
+  if (optionalPollTimer) {
+    clearTimeout(optionalPollTimer);
+    optionalPollTimer = null;
+  }
+  const intervalMs = optionalPollIntervalMs();
+  if (!intervalMs) return;
+  optionalPollTimer = setTimeout(() => {
+    optionalPollTimer = null;
+    tick();
+    scheduleOptionalPoll();
+  }, intervalMs);
+}
+
+function startBrokerHeartbeat() {
+  if (brokerHeartbeatTimer) return;
+  brokerHeartbeatTimer = setInterval(() => {
+    if (config.useBroker !== false && lastBrokerActivity) {
+      publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+    }
+  }, 10_000);
 }
 
 function startWatchers() {
@@ -409,6 +447,13 @@ function startWatchers() {
           taskTitleCache.expiresAt = 0;
           scheduleTick();
         }
+      });
+    } catch {}
+  }
+  if (!configWatcher) {
+    try {
+      configWatcher = fs.watch(scriptDir, (_eventType, filename) => {
+        if (filename === 'config.json') scheduleTick();
       });
     } catch {}
   }
@@ -497,13 +542,17 @@ function tick() {
     activity: activityLabel,
     titleSource: taskTitle ? 'session_index' : 'fallback',
     sessionIndexWatched: Boolean(codexStateWatcher),
-    updateMode: 'file-watch with 2-second fallback poll'
+    updateMode: 'file-watch with optional fallback poll'
   });
 }
 
 function shutdown() {
   dataDirWatcher?.close();
   codexStateWatcher?.close();
+  configWatcher?.close();
+  if (scheduledTick) clearTimeout(scheduledTick);
+  if (optionalPollTimer) clearTimeout(optionalPollTimer);
+  if (brokerHeartbeatTimer) clearInterval(brokerHeartbeatTimer);
   clearPublishedActivity();
   removeDaemonState(dataDir, daemonState);
   process.exit(0);
@@ -513,4 +562,5 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 if (config.useBroker === false) rpc.connect();
 tick();
-setInterval(tick, Math.max(2000, Number(config.pollIntervalMs) || 2000));
+scheduleOptionalPoll();
+startBrokerHeartbeat();

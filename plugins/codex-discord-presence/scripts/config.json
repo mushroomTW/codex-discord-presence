@@ -15,5 +15,5 @@
   "showRepositoryButton": true,
   "repositoryButtonLabel": "View Repository",
   "repositoryUrl": "https://github.com/mushroomTW/codex-discord-presence",
-  "pollIntervalMs": 2000
+  "pollIntervalMs": 0
 }
