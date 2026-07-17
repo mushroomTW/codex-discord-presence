@@ -36,6 +36,10 @@ const brokerStateDir = path.join(
 const brokerHeartbeatPath = path.join(brokerStateDir, 'broker.json');
 const brokerScriptPath = path.join(scriptDir, 'broker.js');
 const BROKER_STALE_MS = 15_000;
+// Codex 若被強制關閉（當機、工作管理員結束）不會觸發 SessionEnd hook，daemon 就無法被 stop.js 關閉；
+// 這裡用「太久沒有任何 session 訊號」作為與 tasklist 偵測無關的保底自我關閉機制。
+const DAEMON_IDLE_SHUTDOWN_MS = 2 * 60 * 60 * 1000;
+const daemonStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
@@ -486,12 +490,24 @@ function scheduleOptionalPoll() {
 
 function startBrokerHeartbeat() {
   if (brokerHeartbeatTimer) return;
-  brokerHeartbeatTimer = setInterval(() => {
-    if (config.useBroker !== false) {
-      ensureBroker();
-      if (lastBrokerActivity) publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
-    }
-  }, 10_000);
+  // 呼叫 tick() 而非重發快取內容，確保沒有檔案變動觸發時，session 過期（TTL）與 daemon 閒置逾時仍會定期被重新評估。
+  brokerHeartbeatTimer = setInterval(() => tick(), 10_000);
+}
+
+function lastSessionSignalAt() {
+  let latest = daemonStartedAt;
+  const candidates = [
+    path.join(dataDir, 'active-sessions.json'),
+    path.join(dataDir, 'active-project.json'),
+    path.join(os.homedir(), '.codex', '.codex-global-state.json')
+  ];
+  for (const candidate of candidates) {
+    try {
+      const mtimeMs = fs.statSync(candidate).mtimeMs;
+      if (mtimeMs > latest) latest = mtimeMs;
+    } catch {}
+  }
+  return latest;
 }
 
 function startWatchers() {
@@ -566,6 +582,11 @@ function tick() {
     clearPublishedActivity();
     removeDaemonState(dataDir, daemonState);
     setTimeout(() => process.exit(0), 250);
+    return;
+  }
+  if (Date.now() - lastSessionSignalAt() > DAEMON_IDLE_SHUTDOWN_MS) {
+    log(`超過 ${Math.round(DAEMON_IDLE_SHUTDOWN_MS / 60_000)} 分鐘沒有收到任何 Codex session 訊號，判定 Codex 已關閉，daemon 自動關閉。`);
+    shutdown();
     return;
   }
   // 與 Claude 外掛一致：daemon 由 Codex 工作階段 Hook 啟動，存活期間必須至少顯示泛用活動。
