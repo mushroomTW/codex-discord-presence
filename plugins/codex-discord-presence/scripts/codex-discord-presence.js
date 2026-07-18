@@ -61,12 +61,18 @@ function readConfig() {
 
 const log = createRotatingLogger(logPath);
 
+let pluginEnabledCache = { mtimeMs: null, value: true };
+
 function pluginIsEnabled() {
   // 外掛可能有多個安裝來源區段（例如 @personal 與 marketplace 版）；
   // 任一區段未明確寫入 enabled = false 即視為啟用，全部停用時 daemon 才自我終止。
   // 逐行判斷而非整段 regex，避免 TOML 格式差異（空行、鍵順序）造成誤判。
   try {
-    const config = fs.readFileSync(path.join(os.homedir(), '.codex', 'config.toml'), 'utf8');
+    const configTomlPath = path.join(os.homedir(), '.codex', 'config.toml');
+    // 以 mtime 快取解析結果，避免每次 tick 都重讀並逐行掃描整份設定。
+    const mtimeMs = fs.statSync(configTomlPath).mtimeMs;
+    if (mtimeMs === pluginEnabledCache.mtimeMs) return pluginEnabledCache.value;
+    const config = fs.readFileSync(configTomlPath, 'utf8');
     let sawSection = false;
     let inPluginSection = false;
     let sectionDisabled = false;
@@ -88,7 +94,8 @@ function pluginIsEnabled() {
       }
     }
     closeSection();
-    return !sawSection || anyEnabled;
+    pluginEnabledCache = { mtimeMs, value: !sawSection || anyEnabled };
+    return pluginEnabledCache.value;
   } catch {
     return true;
   }
@@ -359,33 +366,41 @@ function startBrokerHeartbeat() {
   }, 1_000);
 }
 
-function isWindowsHostRunning() {
-  for (const imageName of WINDOWS_HOST_IMAGE_NAMES) {
-    const result = childProcess.spawnSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], {
-      encoding: 'utf8',
-      timeout: 500,
-      windowsHide: true
-    });
-    if (result.error || result.status !== 0) return null;
-    if (result.stdout.toLocaleLowerCase().includes(`"${imageName.toLocaleLowerCase()}"`)) return true;
-  }
-  return false;
+let hostCheckInFlight = false;
+
+// tasklist 查詢可能耗時 50–300ms；以非同步執行避免阻塞事件迴圈，
+// 讓 timer 與 fs.watch 回呼不受宿主檢查影響。
+function queryWindowsHostRunning(imageIndex, callback) {
+  if (imageIndex >= WINDOWS_HOST_IMAGE_NAMES.length) return callback(false);
+  const imageName = WINDOWS_HOST_IMAGE_NAMES[imageIndex];
+  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], {
+    timeout: 2_000,
+    windowsHide: true
+  }, (error, stdout) => {
+    if (error) return callback(null);
+    if (String(stdout).toLocaleLowerCase().includes(`"${imageName.toLocaleLowerCase()}"`)) return callback(true);
+    queryWindowsHostRunning(imageIndex + 1, callback);
+  });
 }
 
 function checkHostProcess() {
-  const running = isWindowsHostRunning();
-  if (running === null) return;
-  if (running) {
-    hostProcessKnownRunning = true;
-    consecutiveMissingHostChecks = 0;
-    return;
-  }
-  hostProcessKnownRunning = false;
-  consecutiveMissingHostChecks += 1;
-  if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {
-    log('連續 3 秒找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
-    shutdown();
-  }
+  if (hostCheckInFlight) return;
+  hostCheckInFlight = true;
+  queryWindowsHostRunning(0, (running) => {
+    hostCheckInFlight = false;
+    if (running === null) return;
+    if (running) {
+      hostProcessKnownRunning = true;
+      consecutiveMissingHostChecks = 0;
+      return;
+    }
+    hostProcessKnownRunning = false;
+    consecutiveMissingHostChecks += 1;
+    if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {
+      log('連續 3 次檢查找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
+      shutdown();
+    }
+  });
 }
 
 function startHostMonitor() {
