@@ -1,14 +1,14 @@
 # Codex Discord Presence
 
-## 前置需求
+## Prerequisites
 
-使用此外掛前，請先安裝 **Node.js LTS**（建議 20 以上），因為 Plugin Hook 與 Discord Presence daemon 都透過 `node` 執行。安裝完成後，在終端機確認：
+Before installing this plugin, install **Node.js LTS** (Node.js 20 or later is recommended), because the plugin hooks and Discord Presence daemon run through `node`. Verify the installation in a terminal:
 
 ```text
 node --version
 ```
 
-若找不到 `node` 指令，請先安裝 Node.js 並重新開啟 Codex。
+If the `node` command is not found, install Node.js and restart Codex.
 
 <p align="center">
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
@@ -47,7 +47,7 @@ The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Li
 
 The Rich Presence service starts with a Codex session and stops when that session ends. The plugin does not create an operating-system startup entry, so it can be installed, disabled, and removed through Codex without leaving a startup task behind.
 
-Codex 會將 Presence 工作階段資料存放於單一共用本機目錄。只有近期、且不位於使用者家目錄或 Codex 資料目錄內的工作階段才會顯示 Workspace；否則保留泛用 Presence，不會暴露 Windows 使用者名稱。
+Codex stores Presence session data in a single shared local directory. Workspace is shown only for recent sessions whose workspace is not inside the user's home directory or Codex data directory. Otherwise, the plugin keeps a generic Presence and does not expose the Windows username.
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 {
   "name": "codex-discord-presence",
   "version": "0.1.1+codex.20260717000000",
-  "description": "\u5728 Discord \u986f\u793a\u4f60\u6b63\u5728\u4f7f\u7528 Codex \u7684\u672c\u6a5f Rich Presence\u3002",
+  "description": "Show your local Codex activity in Discord Rich Presence.",
   "author": {
     "name": "mushroomMaster"
   },
@@ -11,8 +11,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Codex Discord Presence",
-    "shortDescription": "\u5728 Discord \u986f\u793a Codex \u4f7f\u7528\u72c0\u614b\u3002",
-    "longDescription": "\u4ee5\u672c\u6a5f Discord IPC \u5075\u6e2c Codex \u7a0b\u5e8f\uff0c\u4e26\u986f\u793a\u53ef\u81ea\u8a02\u7684 Rich Presence\uff1b\u4e0d\u6703\u4e0a\u50b3\u5c08\u6848\u5167\u5bb9\u3002",
+    "shortDescription": "Show Codex activity in Discord.",
+    "longDescription": "Detect Codex locally through Discord IPC and display customizable Rich Presence details without uploading project content.",
     "developerName": "mushroomMaster",
     "category": "Productivity",
     "capabilities": [],
@@ -21,6 +21,6 @@
     "websiteURL": "https://github.com/mushroomTW",
     "privacyPolicyURL": "https://github.com/mushroomTW/codex-discord-presence/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/mushroomTW/codex-discord-presence/blob/main/TERMS.md",
-    "defaultPrompt": "\u5354\u52a9\u6211\u8a2d\u5b9a Codex Discord Rich Presence\u3002"
+    "defaultPrompt": "Help me set up Codex Discord Rich Presence."
   }
 }
