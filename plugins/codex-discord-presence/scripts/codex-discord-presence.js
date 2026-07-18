@@ -125,11 +125,19 @@ function findTaskTitle(sessionId) {
       fs.closeSync(descriptor);
     }
     const text = buffer.toString('utf8');
-    const lines = (stat.size > bytes ? text.slice(text.indexOf('\n') + 1) : text).split(/\r?\n/);
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      if (!lines[index]) continue;
+    // 尾端讀取可能截到半行；第一個換行之前的殘缺紀錄不納入搜尋範圍。
+    const lowerBound = stat.size > bytes ? text.indexOf('\n') + 1 : 0;
+    // 直接從尾端搜尋 sessionId 出現位置，只解析可能命中的行，
+    // 避免把整段 512KB 切成數千個行字串與逐行 JSON.parse。
+    let searchEnd = text.length;
+    while (searchEnd > lowerBound) {
+      const hit = text.lastIndexOf(sessionId, searchEnd - 1);
+      if (hit < lowerBound) break;
+      const lineStart = Math.max(text.lastIndexOf('\n', hit) + 1, lowerBound);
+      const newlineAfterHit = text.indexOf('\n', hit);
+      const lineEnd = newlineAfterHit === -1 ? text.length : newlineAfterHit;
       try {
-        const item = JSON.parse(lines[index]);
+        const item = JSON.parse(text.slice(lineStart, lineEnd));
         if (item.id === sessionId && typeof item.thread_name === 'string' && item.thread_name) {
           title = item.thread_name;
           break;
@@ -137,6 +145,7 @@ function findTaskTitle(sessionId) {
       } catch {
         // 索引最後一行可能正由 Codex 寫入，略過不完整紀錄。
       }
+      searchEnd = lineStart - 1;
     }
   } catch {
     // 索引暫時無法讀取時，保留設定檔中的預設備註。
