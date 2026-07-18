@@ -24,14 +24,16 @@ Show a local Discord Rich Presence while the Codex desktop app is running. The p
 
 ## Install
 
-Run these commands in a terminal authenticated with GitHub:
+Add the public marketplace from a terminal:
 
 ```sh
 codex plugin marketplace add mushroomTW/codex-discord-presence
-codex plugin add codex-discord-presence@codex-discord-presence
 ```
 
-The first command adds the marketplace and the second installs the plugin. Trust the plugin Hook when prompted, then open or resume a Codex session.
+Then open the Codex app's Plugins page, find **Codex Discord Presence** in the
+`codex-discord-presence` marketplace, and select **Install**. Trust the plugin
+Hook when prompted, then open or resume a Codex session. The marketplace is
+public, so a GitHub-authenticated terminal is not required.
 
 ## Setup
 
@@ -39,9 +41,9 @@ The plugin includes the Discord Application created by mushroomTW. Users do not 
 
 ## Controls
 
-- Start: `node ./plugins/codex-discord-presence/scripts/start.js`
-- Stop: `node ./plugins/codex-discord-presence/scripts/stop.js`
-- Status: `node ./plugins/codex-discord-presence/scripts/codex-discord-presence.js --status`
+- Start: `node ./scripts/start.js`
+- Stop: `node ./scripts/stop.js`
+- Status: `node ./scripts/codex-discord-presence.js --status`
 
 The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
 
