@@ -4,13 +4,13 @@
 // 僅使用 Node.js 內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
 const childProcess = require('child_process');
 const fs = require('fs');
-const net = require('net');
 const path = require('path');
-const crypto = require('crypto');
 const os = require('os');
 const { isFreshSession, isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
 const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
 const { createRotatingLogger } = require('./shared/logger');
+const { DiscordRpc: SharedDiscordRpc } = require('./shared/discord-rpc');
+const { buildPresence, truncate } = require('./shared/presence-builder');
 const { classifyActivity } = require('./activity-classifier');
 
 const scriptDir = __dirname;
@@ -24,7 +24,6 @@ fs.mkdirSync(dataDir, { recursive: true });
 const configPath = path.join(scriptDir, 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
 const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
-const MAX_IPC_FRAME_SIZE = 1024 * 1024;
 const CONTEXT_SCAN_INTERVAL_MS = 30_000;
 const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const scriptPath = path.resolve(__filename);
@@ -61,14 +60,6 @@ function readConfig() {
 }
 
 const log = createRotatingLogger(logPath);
-
-function discordIpcPaths(index) {
-  if (process.platform === 'win32') return [`\\\\?\\pipe\\discord-ipc-${index}`];
-  const directories = process.platform === 'linux'
-    ? [process.env.XDG_RUNTIME_DIR, '/tmp']
-    : ['/tmp'];
-  return directories.filter(Boolean).map((directory) => path.join(directory, `discord-ipc-${index}`));
-}
 
 function pluginIsEnabled() {
   // 外掛可能有多個安裝來源區段（例如 @personal 與 marketplace 版）；
@@ -202,161 +193,6 @@ function findGitHubRepository(cwd) {
   return repositoryCache.url;
 }
 
-function writeFrame(socket, opcode, payload) {
-  const body = Buffer.from(JSON.stringify(payload), 'utf8');
-  const header = Buffer.alloc(8);
-  header.writeInt32LE(opcode, 0);
-  header.writeInt32LE(body.length, 4);
-  socket.cork();
-  socket.write(header);
-  socket.write(body);
-  socket.uncork();
-}
-
-function truncate(value, maximumLength) {
-  return String(value).slice(0, maximumLength);
-}
-
-class DiscordRpc {
-  constructor(clientId) {
-    this.clientId = clientId;
-    this.socket = null;
-    this.buffer = Buffer.alloc(0);
-    this.ready = false;
-    this.reconnectTimer = null;
-    this.reconnectAttempt = 0;
-  }
-
-  connect() {
-    if (this.socket || !this.clientId) return;
-    const tryPipe = (index) => {
-      if (index > 9) {
-        this.scheduleReconnect();
-        return;
-      }
-      const paths = discordIpcPaths(index);
-      const tryPath = (pathIndex) => {
-        if (pathIndex >= paths.length) {
-          tryPipe(index + 1);
-          return;
-        }
-        const socket = net.createConnection(paths[pathIndex]);
-        let settled = false;
-        socket.once('connect', () => {
-          settled = true;
-        this.socket = socket;
-        this.buffer = Buffer.alloc(0);
-        socket.on('data', (data) => this.onData(data));
-        socket.on('close', () => this.reset(socket));
-        socket.on('error', () => this.reset(socket));
-        writeFrame(socket, 0, { v: 1, client_id: this.clientId });
-          log(`已連線至 Discord IPC #${index}`);
-        });
-        socket.once('error', () => {
-          if (!settled) tryPath(pathIndex + 1);
-        });
-      };
-      tryPath(0);
-    };
-    tryPipe(0);
-  }
-
-  reset(socket = null) {
-    if (socket && this.socket !== socket) return;
-    this.socket = null;
-    this.ready = false;
-    this.scheduleReconnect();
-  }
-
-  scheduleReconnect() {
-    if (this.reconnectTimer) return;
-    const delay = Math.min(30_000, 1_000 * (2 ** this.reconnectAttempt));
-    this.reconnectAttempt += 1;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, delay);
-  }
-
-  onData(data) {
-    if (data.length > MAX_IPC_FRAME_SIZE + 8 || this.buffer.length > MAX_IPC_FRAME_SIZE + 8 - data.length) {
-      log(`Discord IPC 接收緩衝超過上限：${data.length}`);
-      this.buffer = Buffer.alloc(0);
-      this.socket?.destroy();
-      return;
-    }
-    this.buffer = Buffer.concat([this.buffer, data]);
-    while (this.buffer.length >= 8) {
-      const opcode = this.buffer.readInt32LE(0);
-      const length = this.buffer.readInt32LE(4);
-      if (length < 0 || length > MAX_IPC_FRAME_SIZE) {
-        log(`Discord IPC 訊框長度無效：${length}`);
-        this.socket?.destroy();
-        return;
-      }
-      if (this.buffer.length < 8 + length) return;
-      let payload;
-      try {
-        payload = JSON.parse(this.buffer.subarray(8, 8 + length).toString('utf8'));
-      } catch (error) {
-        log(`Discord IPC 訊框無法解析：${error.message}`);
-        this.socket?.destroy();
-        return;
-      }
-      this.buffer = this.buffer.subarray(8 + length);
-      if (opcode === 2) {
-        log(`Discord IPC 已關閉：${payload.data?.message || JSON.stringify(payload)}`);
-        this.socket?.destroy();
-        return;
-      }
-      if (payload.evt === 'READY') {
-        this.ready = true;
-        this.lastActivityFingerprint = null;
-        this.reconnectAttempt = 0;
-        log('Discord Rich Presence 已就緒');
-      } else if (payload.evt === 'ERROR') {
-        log(`Discord RPC 錯誤：${payload.data?.message || JSON.stringify(payload)}`);
-      }
-    }
-  }
-
-  setActivity(activity) {
-    if (!this.ready || !this.socket || this.socket.destroyed) return;
-    const fingerprint = JSON.stringify(activity);
-    if (this.lastActivityFingerprint === fingerprint) return;
-    this.lastActivityFingerprint = fingerprint;
-    writeFrame(this.socket, 1, {
-      cmd: 'SET_ACTIVITY',
-      nonce: crypto.randomUUID(),
-      args: { pid: process.pid, activity }
-    });
-  }
-
-  clearActivity() {
-    this.lastActivityFingerprint = null;
-    this.setActivity(null);
-  }
-
-  disconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    this.reconnectAttempt = 0;
-    this.lastActivityFingerprint = null;
-    const socket = this.socket;
-    this.socket = null;
-    this.ready = false;
-    if (socket) {
-      // 移除監聽器避免 close 事件觸發自動重連。
-      socket.removeAllListeners('close');
-      socket.removeAllListeners('error');
-      socket.on('error', () => {});
-      socket.destroy();
-    }
-  }
-}
-
 function status() {
   const state = readDaemonState(dataDir);
   const running = Boolean(state && isOwnedDaemon(state));
@@ -386,7 +222,7 @@ if (!/^\d{17,20}$/.test(config.clientId)) {
 
 const daemonState = { pid: process.pid, instanceToken, scriptPath };
 writeDaemonState(dataDir, daemonState);
-const rpc = new DiscordRpc(config.clientId);
+const rpc = new SharedDiscordRpc(config.clientId, { log });
 let active = false;
 let startedAt = null;
 let dataDirWatcher = null;
@@ -499,10 +335,16 @@ function scheduleOptionalPoll() {
 
 function startBrokerHeartbeat() {
   if (brokerHeartbeatTimer) return;
-  // Broker 的狀態 TTL 為 3 秒；每秒重新評估可避免沒有檔案事件時活動過期閃爍。
+  // Broker 以狀態檔 mtime 判定 TTL；只 touch 檔案可避免每秒重寫相同 JSON。
   brokerHeartbeatTimer = setInterval(() => {
     if (config.useBroker !== false && lastBrokerActivity) {
-      publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+      const statePath = path.join(brokerStateDir, 'codex.json');
+      try {
+        const now = new Date();
+        fs.utimesSync(statePath, now, now);
+      } catch {
+        publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+      }
       ensureBroker();
     }
   }, 1_000);
@@ -663,19 +505,17 @@ function tick() {
     : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
   const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
   const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
-  const buttons = config.showRepositoryButton === false || !repositoryUrl
-    ? undefined
-    : [{ label: truncate(config.repositoryButtonLabel || 'View Repository', 32), url: repositoryUrl }];
   // Discord 對 details 與 state 的長度上限為 128 字元。
-  const activity = {
-    details: truncate(projectName
+  const activity = buildPresence({
+    details: projectName
       ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
-      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`, 128),
-    state: truncate(taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state), 128),
-    ...(config.showElapsedTime === false ? {} : { timestamps: { start: startedAt } }),
-    instance: false,
-    buttons
-  };
+      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
+    state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
+    startedAt,
+    showElapsedTime: config.showElapsedTime !== false,
+    repositoryUrl: config.showRepositoryButton === false ? null : repositoryUrl,
+    repositoryButtonLabel: config.repositoryButtonLabel
+  });
   if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
   else rpc.setActivity(activity);
   writeDiagnostic({
