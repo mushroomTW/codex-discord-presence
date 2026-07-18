@@ -20,7 +20,7 @@ Show a local Discord Rich Presence while the Codex desktop app is running. The p
 
 ## Example
 
-![Discord Rich Presence showing the active workspace and task title](plugins/codex-discord-presence/assets/workspace-task-example.png)
+![Discord Rich Presence showing Codex activity, workspace, and task title](plugins/codex-discord-presence/assets/workspace-task-example.png)
 
 ## Install
 
