@@ -2,13 +2,26 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\"",
             "timeout": 10,
             "statusMessage": "Starting Discord Rich Presence"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\" --update",
+            "timeout": 10,
+            "statusMessage": "Updating Discord Rich Presence"
           }
         ]
       }

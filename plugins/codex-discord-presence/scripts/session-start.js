@@ -14,6 +14,7 @@ const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   'codex-discord-presence'
 );
 const sessionsPath = path.join(dataDir, 'active-sessions.json');
+const updateOnly = process.argv.includes('--update');
 fs.mkdirSync(dataDir, { recursive: true });
 
 function removeLegacyStartupEntry() {
@@ -25,7 +26,7 @@ function removeLegacyStartupEntry() {
   fs.rmSync(file, { force: true });
 }
 
-removeLegacyStartupEntry();
+if (!updateOnly) removeLegacyStartupEntry();
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -64,12 +65,14 @@ process.stdin.on('end', () => {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。
   }
 
-  childProcess.spawn(process.execPath, [path.join(scriptDir, 'start.js')], {
-    cwd: scriptDir,
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, CODEX_PRESENCE_DATA: dataDir },
-    windowsHide: true
-  }).unref();
+  if (!updateOnly) {
+    childProcess.spawn(process.execPath, [path.join(scriptDir, 'start.js')], {
+      cwd: scriptDir,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, CODEX_PRESENCE_DATA: dataDir },
+      windowsHide: true
+    }).unref();
+  }
 });
 process.stdin.resume();

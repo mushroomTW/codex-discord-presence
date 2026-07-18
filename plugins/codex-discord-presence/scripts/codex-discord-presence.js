@@ -39,7 +39,7 @@ const BROKER_STALE_MS = 15_000;
 // Codex 若被強制關閉（當機、工作管理員結束）不會觸發 SessionEnd hook。
 // Windows 會額外監看 Codex Desktop 宿主，並以 session 訊號閒置時間作為跨平台保底。
 const DAEMON_IDLE_SHUTDOWN_MS = 2 * 60 * 60 * 1000;
-const HOST_CHECK_INTERVAL_MS = 1_000;
+const HOST_CHECK_INTERVAL_MS = 10_000;
 const HOST_MISSING_LIMIT = 3;
 const WINDOWS_HOST_IMAGE_NAMES = ['codex.exe'];
 const daemonStartedAt = Date.now();
@@ -247,8 +247,8 @@ class DiscordRpc {
         this.socket = socket;
         this.buffer = Buffer.alloc(0);
         socket.on('data', (data) => this.onData(data));
-        socket.on('close', () => this.reset());
-        socket.on('error', () => this.reset());
+        socket.on('close', () => this.reset(socket));
+        socket.on('error', () => this.reset(socket));
         writeFrame(socket, 0, { v: 1, client_id: this.clientId });
           log(`已連線至 Discord IPC #${index}`);
         });
@@ -261,7 +261,8 @@ class DiscordRpc {
     tryPipe(0);
   }
 
-  reset() {
+  reset(socket = null) {
+    if (socket && this.socket !== socket) return;
     this.socket = null;
     this.ready = false;
     this.scheduleReconnect();
@@ -396,9 +397,12 @@ let optionalPollTimer = null;
 let brokerHeartbeatTimer = null;
 let hostProcessTimer = null;
 let consecutiveMissingHostChecks = 0;
+let hostProcessKnownRunning = null;
 let configMtimeMs = 0;
 let lastBrokerActivity = null;
 let lastBrokerActivityLabel = null;
+let lastDiagnosticSnapshot = null;
+let activityCache = { transcriptPath: null, mtimeMs: 0, size: 0, value: 'Waiting' };
 let lastUseBroker = null;
 let brokerSpawnedAt = 0;
 
@@ -496,7 +500,12 @@ function scheduleOptionalPoll() {
 function startBrokerHeartbeat() {
   if (brokerHeartbeatTimer) return;
   // Broker 的狀態 TTL 為 3 秒；每秒重新評估可避免沒有檔案事件時活動過期閃爍。
-  brokerHeartbeatTimer = setInterval(() => tick(), 1_000);
+  brokerHeartbeatTimer = setInterval(() => {
+    if (config.useBroker !== false && lastBrokerActivity) {
+      publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+      ensureBroker();
+    }
+  }, 1_000);
 }
 
 function isWindowsHostRunning() {
@@ -516,9 +525,11 @@ function checkHostProcess() {
   const running = isWindowsHostRunning();
   if (running === null) return;
   if (running) {
+    hostProcessKnownRunning = true;
     consecutiveMissingHostChecks = 0;
     return;
   }
+  hostProcessKnownRunning = false;
   consecutiveMissingHostChecks += 1;
   if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {
     log('連續 3 秒找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
@@ -528,6 +539,7 @@ function checkHostProcess() {
 
 function startHostMonitor() {
   if (process.platform !== 'win32' || hostProcessTimer) return;
+  checkHostProcess();
   hostProcessTimer = setInterval(checkHostProcess, HOST_CHECK_INTERVAL_MS);
 }
 
@@ -576,6 +588,9 @@ function startWatchers() {
 
 function writeDiagnostic(snapshot) {
   try {
+    const serialized = JSON.stringify(snapshot);
+    if (serialized === lastDiagnosticSnapshot) return;
+    lastDiagnosticSnapshot = serialized;
     fs.writeFileSync(diagnosticPath, JSON.stringify({ updatedAt: new Date().toISOString(), ...snapshot }, null, 2), 'utf8');
   } catch (error) {
     log(`無法寫入活動診斷快照：${error.message}`);
@@ -586,6 +601,9 @@ function findActivity(transcriptPath) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) return 'Waiting';
   try {
     const stat = fs.statSync(transcriptPath);
+    if (activityCache.transcriptPath === transcriptPath
+      && activityCache.mtimeMs === stat.mtimeMs
+      && activityCache.size === stat.size) return activityCache.value;
     const bytes = Math.min(stat.size, 65_536);
     const buffer = Buffer.alloc(bytes);
     const descriptor = fs.openSync(transcriptPath, 'r');
@@ -594,7 +612,9 @@ function findActivity(transcriptPath) {
     } finally {
       fs.closeSync(descriptor);
     }
-    return classifyActivity(buffer.toString('utf8'));
+    const value = classifyActivity(buffer.toString('utf8'));
+    activityCache = { transcriptPath, mtimeMs: stat.mtimeMs, size: stat.size, value };
+    return value;
   } catch {
     return 'Working';
   }
@@ -621,7 +641,7 @@ function tick() {
     setTimeout(() => process.exit(0), 250);
     return;
   }
-  if (Date.now() - lastSessionSignalAt() > DAEMON_IDLE_SHUTDOWN_MS) {
+  if (hostProcessKnownRunning !== true && Date.now() - lastSessionSignalAt() > DAEMON_IDLE_SHUTDOWN_MS) {
     log(`超過 ${Math.round(DAEMON_IDLE_SHUTDOWN_MS / 60_000)} 分鐘沒有收到任何 Codex session 訊號，判定 Codex 已關閉，daemon 自動關閉。`);
     shutdown();
     return;
@@ -686,7 +706,7 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 if (config.useBroker === false) rpc.connect();
 else ensureBroker();
+startHostMonitor();
 tick();
 scheduleOptionalPoll();
 startBrokerHeartbeat();
-startHostMonitor();

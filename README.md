@@ -14,7 +14,7 @@ If the `node` command is not found, install Node.js and restart Codex.
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
 </p>
 
-Show a local Discord Rich Presence while the Codex desktop app is running. The plugin does not read or upload prompts, project contents, or chat messages. It can optionally show the active Codex workspace and task title.
+Show a local Discord Rich Presence while the Codex desktop app is running. The plugin does not upload prompts, project contents, or chat messages. To infer a generic activity label such as `Thinking` or `Editing`, it reads only the record types from the tail of the active local transcript; record content is not sent to Discord. It can optionally show the active Codex workspace and task title.
 
 [Privacy Policy](PRIVACY.md) · [Terms of Service](TERMS.md) · [MIT License](LICENSE)
 
@@ -57,7 +57,7 @@ Content updates are event-driven by default (`pollIntervalMs: 0`). Set `pollInte
 
 `useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. The plugin bundles the Broker at `scripts/broker.js` and the daemon starts it automatically when no Broker heartbeat is present, so no manual step is required. The Broker enforces a single running instance, so Claude and Codex can both enable it safely. Set `useBroker` to `false` only for direct IPC mode.
 
-This repository also includes a standalone copy of the Broker at `discord-presence-broker/broker.js` for running it manually with `node discord-presence-broker/broker.js`.
+The repository intentionally keeps only the Broker bundled with the plugin. For manual development or standalone execution, use the workspace-level `discord-presence-broker/broker.js`; it is the reference source shared by the Claude and Codex plugin copies.
 
 ### Workspace and task title
 

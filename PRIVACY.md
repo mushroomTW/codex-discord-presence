@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: July 16, 2026
+Last updated: July 18, 2026
 
 ## Overview
 
@@ -13,6 +13,7 @@ The Plugin may read the following information locally to prepare a Rich Presence
 - The current workspace or project name, when project display is enabled.
 - Plugin configuration and process state, including a process ID and diagnostic log.
 - When task-title display is enabled, the active Codex task title or a locally configured title override.
+- To infer a generic activity label, up to the final 64 KiB of the active local transcript is read and only record types are classified. Prompt and response text is not included in the Presence payload.
 
 This information is processed on your device by the Plugin. Full project paths, prompts, conversation content, source files, and project contents are not used for the Presence status.
 
@@ -24,7 +25,7 @@ Do not enable project names or repository buttons if they could reveal confident
 
 ## Data Collection and Storage
 
-The Plugin does not operate a remote service, collect analytics, create user accounts, or transmit data to the Plugin authors. Its local process state and logs are stored in the Plugin's managed data directory and are removed when the Plugin is uninstalled from its final scope, unless you preserve them separately.
+The Plugin does not operate a remote service, collect analytics, create user accounts, or transmit data to the Plugin authors. By default, local process state, session metadata, diagnostics, and logs are stored under `%LOCALAPPDATA%\\mushroomTW\\codex-discord-presence`; shared Broker state is stored under `%LOCALAPPDATA%\\mushroomTW\\discord-presence-broker`. `CODEX_PRESENCE_DATA` can override the first location. These files can contain local workspace and transcript paths. Uninstalling the Plugin does not currently remove these directories; delete them manually if you want to erase retained local data.
 
 ## Third-Party Services
 
