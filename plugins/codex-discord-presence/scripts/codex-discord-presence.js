@@ -537,7 +537,7 @@ function tick() {
   const activity = buildPresence({
     details: projectName
       ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
-      : `${String(config.details)}${activityLabel ? ` · ${activityLabel}` : ''}`,
+      : `${truncate(config.details, 110)}${activityLabel ? ` · ${activityLabel}` : ''}`,
     state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
     startedAt,
     showElapsedTime: config.showElapsedTime !== false,
