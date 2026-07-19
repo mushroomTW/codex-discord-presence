@@ -9,12 +9,10 @@ const { writeJsonAtomic } = require('./session-state');
 
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-  'mushroomTW',
   'codex-discord-presence'
 );
 const brokerStateDir = process.env.DISCORD_PRESENCE_BROKER_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-  'mushroomTW',
   'discord-presence-broker'
 );
 const daemonScript = path.join(__dirname, 'codex-discord-presence.js');

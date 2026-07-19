@@ -10,7 +10,6 @@ const { isWorkspaceCwd, pruneSessions, readSessions, writeJsonAtomic } = require
 const scriptDir = __dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-  'mushroomTW',
   'codex-discord-presence'
 );
 const sessionsPath = path.join(dataDir, 'active-sessions.json');

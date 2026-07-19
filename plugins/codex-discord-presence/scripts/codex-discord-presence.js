@@ -16,7 +16,6 @@ const { classifyActivity } = require('./activity-classifier');
 const scriptDir = __dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-  'mushroomTW',
   'codex-discord-presence'
 );
 fs.mkdirSync(dataDir, { recursive: true });
@@ -29,7 +28,6 @@ const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const scriptPath = path.resolve(__filename);
 const brokerStateDir = path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-  'mushroomTW',
   'discord-presence-broker'
 );
 const brokerHeartbeatPath = path.join(brokerStateDir, 'broker.json');
