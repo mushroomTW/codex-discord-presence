@@ -40,8 +40,11 @@ const BROKER_STALE_MS = 15_000;
 const DAEMON_IDLE_SHUTDOWN_MS = 2 * 60 * 60 * 1000;
 const HOST_CHECK_INTERVAL_MS = 10_000;
 const HOST_MISSING_LIMIT = 3;
+// 開機後 Codex Desktop 可能尚未完成程序註冊；先保留 daemon，避免一次性的 SessionStart hook 被競速吃掉。
+const HOST_STARTUP_GRACE_MS = 60_000;
 const WINDOWS_HOST_IMAGE_NAMES = ['codex.exe'];
 const daemonStartedAt = Date.now();
+const hostMonitorStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
@@ -394,6 +397,7 @@ function checkHostProcess() {
       consecutiveMissingHostChecks = 0;
       return;
     }
+    if (Date.now() - hostMonitorStartedAt < HOST_STARTUP_GRACE_MS) return;
     hostProcessKnownRunning = false;
     consecutiveMissingHostChecks += 1;
     if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {

@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\" --update",
+            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\" --update --start",
             "timeout": 10,
             "statusMessage": "Updating Discord Rich Presence"
           }

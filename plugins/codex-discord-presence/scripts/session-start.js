@@ -15,6 +15,7 @@ const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
 );
 const sessionsPath = path.join(dataDir, 'active-sessions.json');
 const updateOnly = process.argv.includes('--update');
+const startDaemon = !updateOnly || process.argv.includes('--start');
 fs.mkdirSync(dataDir, { recursive: true });
 
 function removeLegacyStartupEntry() {
@@ -65,7 +66,7 @@ process.stdin.on('end', () => {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。
   }
 
-  if (!updateOnly) {
+  if (startDaemon) {
     childProcess.spawn(process.execPath, [path.join(scriptDir, 'start.js')], {
       cwd: scriptDir,
       detached: true,

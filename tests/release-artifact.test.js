@@ -22,7 +22,7 @@ test('Codex 發布 metadata 與必要檔案完整', () => {
   assert.equal(marketplace.plugins.length, 1);
   assert.equal(marketplace.plugins[0].name, manifest.name);
   assert.equal(marketplace.plugins[0].source.path, './plugins/codex-discord-presence');
-  assert.match(manifest.version, /^\d+\.\d+\.\d+\+codex\.\d{14}$/);
+  assert.match(manifest.version, /^0\.1\.\d+$/);
   assert.match(config.clientId, /^\d{17,20}$/);
   assert.equal(config.useBroker, true);
 

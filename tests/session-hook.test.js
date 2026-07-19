@@ -12,7 +12,7 @@ const hooks = require('../plugins/codex-discord-presence/hooks/hooks.json');
 
 test('Codex hooks 涵蓋完整 SessionStart 與 prompt 更新', () => {
   assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear|compact');
-  assert.match(hooks.hooks.UserPromptSubmit[0].hooks[0].command, /--update$/);
+  assert.match(hooks.hooks.UserPromptSubmit[0].hooks[0].command, /--update --start$/);
 });
 
 test('--update 會刷新 session 狀態並正常結束', () => {

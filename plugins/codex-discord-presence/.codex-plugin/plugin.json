@@ -1,6 +1,6 @@
 {
   "name": "codex-discord-presence",
-  "version": "0.1.1+codex.20260719000914",
+  "version": "0.1.2",
   "description": "Show your local Codex activity in Discord Rich Presence.",
   "author": {
     "name": "mushroomMaster"
