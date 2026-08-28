@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-const childProcess = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const childProcess = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { isWorkspaceCwd, pruneSessions, readSessions, writeJsonAtomic } = require('./session-state');
 
 const scriptDir = __dirname;
@@ -17,12 +17,18 @@ const updateOnly = process.argv.includes('--update');
 const startDaemon = !updateOnly || process.argv.includes('--start');
 fs.mkdirSync(dataDir, { recursive: true });
 
+function getLegacyStartupPath() {
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'codex-discord-presence.cmd');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.mushroomtw.codex-discord-presence.plist');
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'autostart', 'codex-discord-presence.desktop');
+}
+
 function removeLegacyStartupEntry() {
-  const file = process.platform === 'win32'
-    ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'codex-discord-presence.cmd')
-    : process.platform === 'darwin'
-      ? path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.mushroomtw.codex-discord-presence.plist')
-      : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'autostart', 'codex-discord-presence.desktop');
+  const file = getLegacyStartupPath();
   fs.rmSync(file, { force: true });
 }
 

@@ -37,7 +37,8 @@ test('Codex hooks 僅引用存在的 Node.js 腳本', () => {
   assert.ok(commands.length > 0);
   for (const hook of commands) {
     assert.equal(hook.type, 'command');
-    assert.ok(Number(hook.timeout) > 0 && Number(hook.timeout) <= 10);
+    assert.ok(Number(hook.timeout) > 0, `Hook 超時必須大於 0：${hook.timeout}`);
+    assert.ok(Number(hook.timeout) <= 10, `Hook 超時必須不超過 10 秒：${hook.timeout}`);
     const match = hook.command.match(/\$\{PLUGIN_ROOT\}\/([^" ]+\.js)/);
     assert.ok(match, `無法解析 Hook 命令：${hook.command}`);
     assert.ok(fs.existsSync(path.join(pluginRoot, match[1])), `Hook 腳本不存在：${match[1]}`);

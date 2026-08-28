@@ -13,3 +13,4 @@ plugins/codex-discord-presence/dist/*.start.lock
 .DS_Store
 Thumbs.db
 .omc
+.scannerwork/

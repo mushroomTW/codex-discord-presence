@@ -2,15 +2,15 @@
 'use strict';
 
 // 僅使用 Node.js 內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
-const childProcess = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const childProcess = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 const { isFreshSession, isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
 const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
 const { createRotatingLogger } = require('./shared/logger');
 const { DiscordRpc: SharedDiscordRpc } = require('./shared/discord-rpc');
-const { buildPresence, truncate } = require('./shared/presence-builder');
+const { buildPresence, truncate, truncateToWidth, displayWidth } = require('./shared/presence-builder');
 const { classifyActivity } = require('./activity-classifier');
 
 const scriptDir = __dirname;
@@ -51,7 +51,7 @@ let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 0, showActivity: true, showElapsedTime: true, useBroker: true };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 0, showActivity: true, showElapsedTime: true, useBroker: true, projectNameMaxWidth: 40, taskTitleMaxWidth: 40 };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -192,7 +192,7 @@ function findLatestProject() {
 
 function findGitHubRepository(cwd) {
   if (repositoryCache.cwd === cwd) return repositoryCache.url;
-  const result = childProcess.spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], {
+  const result = childProcess.spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], { // NOSONAR javascript:S4036 - 本機工作區查詢遠端 URL，cwd 為已驗證的 Workspace 路徑，非 PATH 注入邊界
     encoding: 'utf8',
     windowsHide: true
   });
@@ -374,7 +374,7 @@ let hostCheckInFlight = false;
 function queryWindowsHostRunning(imageIndex, callback) {
   if (imageIndex >= WINDOWS_HOST_IMAGE_NAMES.length) return callback(false);
   const imageName = WINDOWS_HOST_IMAGE_NAMES[imageIndex];
-  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], {
+  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
     timeout: 2_000,
     windowsHide: true
   }, (error, stdout) => {
@@ -488,12 +488,9 @@ function findActivity(transcriptPath) {
   }
 }
 
-function tick() {
-  startWatchers();
-  refreshConfig();
+function syncBrokerConnectionForTick() {
   const useBroker = config.useBroker !== false;
   if (lastUseBroker === true && !useBroker) {
-    // 從 Broker 模式切回直連時，立即撤下 Broker 端的舊狀態。
     clearBrokerState();
   }
   lastUseBroker = useBroker;
@@ -503,6 +500,53 @@ function tick() {
     if (rpc.socket || rpc.reconnectTimer) rpc.disconnect();
     ensureBroker();
   }
+  return useBroker;
+}
+
+function ensureActiveSession() {
+  if (!active) {
+    active = true;
+    startedAt = Math.floor(Date.now() / 1000);
+    log('Codex Discord Presence daemon 已啟動，正在更新 Discord 活動。');
+  }
+}
+
+function buildCodexPresence(project) {
+  const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
+  const projectName = workspaceEnabled === false
+    ? null
+    : truncate(config.workspaceName || project?.name || '', 60);
+  const taskTitle = config.showTaskTitle === false
+    ? null
+    : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
+  const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
+  const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
+  const activitySuffix = activityLabel ? ` · ${activityLabel}` : '';
+  let state;
+  if (taskTitle) {
+    const prefix = 'Task: ';
+    const titleBudget = Math.max(0, (config.taskTitleMaxWidth ?? 40) - displayWidth(prefix) - displayWidth(activitySuffix));
+    state = `${prefix}${truncateToWidth(taskTitle, titleBudget)}${activitySuffix}`;
+  } else {
+    state = `${String(config.taskTitleFallback || config.state)}${activitySuffix}`;
+  }
+  const activity = buildPresence({
+    details: projectName
+      ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${truncateToWidth(projectName, config.projectNameMaxWidth)}`
+      : truncate(config.details, 110),
+    state,
+    startedAt,
+    showElapsedTime: config.showElapsedTime !== false,
+    repositoryUrl: config.showRepositoryButton === false ? null : repositoryUrl,
+    repositoryButtonLabel: config.repositoryButtonLabel
+  });
+  return { activity, activityLabel, projectName, taskTitle };
+}
+
+function tick() {
+  startWatchers();
+  refreshConfig();
+  syncBrokerConnectionForTick();
   if (!pluginIsEnabled()) {
     clearPublishedActivity();
     removeDaemonState(dataDir, daemonState);
@@ -514,34 +558,9 @@ function tick() {
     shutdown();
     return;
   }
-  // 與 Claude 外掛一致：daemon 由 Codex 工作階段 Hook 啟動，存活期間必須至少顯示泛用活動。
-  // Windows 宿主監看僅決定 daemon 是否結束；查詢失敗時保守維持這個泛用活動。
-  if (!active) {
-    active = true;
-    startedAt = Math.floor(Date.now() / 1000);
-    log('Codex Discord Presence daemon 已啟動，正在更新 Discord 活動。');
-  }
+  ensureActiveSession();
   const project = findLatestProject();
-  const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
-  const projectName = workspaceEnabled === false
-    ? null
-    : truncate(config.workspaceName || project?.name || '', 60);
-  const taskTitle = config.showTaskTitle === false
-    ? null
-    : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
-  const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
-  const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
-  // Discord 對 details 與 state 的長度上限為 128 字元。
-  const activity = buildPresence({
-    details: projectName
-      ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${projectName}${activityLabel ? ` · ${activityLabel}` : ''}`
-      : `${truncate(config.details, 110)}${activityLabel ? ` · ${activityLabel}` : ''}`,
-    state: taskTitle ? `Task: ${taskTitle}` : String(config.taskTitleFallback || config.state),
-    startedAt,
-    showElapsedTime: config.showElapsedTime !== false,
-    repositoryUrl: config.showRepositoryButton === false ? null : repositoryUrl,
-    repositoryButtonLabel: config.repositoryButtonLabel
-  });
+  const { activity, activityLabel, projectName, taskTitle } = buildCodexPresence(project);
   if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
   else rpc.setActivity(activity);
   writeDiagnostic({
