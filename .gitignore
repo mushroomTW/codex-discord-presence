@@ -14,3 +14,4 @@ plugins/codex-discord-presence/dist/*.start.lock
 Thumbs.db
 .omc
 .scannerwork/
+coverage/
