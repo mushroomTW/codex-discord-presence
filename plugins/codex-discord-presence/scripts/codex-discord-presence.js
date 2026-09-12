@@ -52,7 +52,26 @@ let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', showActivity: true, showElapsedTime: true, useBroker: true, projectNameMaxWidth: 40, taskTitleMaxWidth: 40 };
+  const defaults = {
+    clientId: '',
+    details: 'Using Codex',
+    state: 'Vibe coding',
+    showProject: true,
+    projectLabel: 'Workspace',
+    showTaskTitle: true,
+    showActivity: true,
+    showElapsedTime: true,
+    useBroker: true,
+    compactPrefix: true,
+    compactProjectLabel: '📁 ',
+    compactTaskLabel: '📌 ',
+    taskLabel: 'Task',
+    showAssets: true,
+    largeImage: 'https://cdn.discordapp.com/app-icons/1526976952970514583/0bc5cf2cdb3b4164f51f3456973764c5.png',
+    largeImageText: 'Codex · Vibe Coding',
+    projectNameMaxWidth: 40,
+    taskTitleMaxWidth: 40
+  };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -456,6 +475,11 @@ function ensureActiveSession() {
   }
 }
 
+function formatPrefix(label, fallback) {
+  const text = String(label || fallback).trimEnd();
+  return text.endsWith(':') ? `${text} ` : `${text}: `;
+}
+
 function buildCodexPresence(project) {
   const projectName = config.showProject === false ? null : String(project?.name || '');
   const taskTitle = config.showTaskTitle === false
@@ -464,23 +488,40 @@ function buildCodexPresence(project) {
   const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
   const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
   const activitySuffix = activityLabel ? ` · ${activityLabel}` : '';
+
+  const isCompact = config.compactPrefix !== false;
+  const projectPrefix = isCompact
+    ? (config.compactProjectLabel ?? '📁 ')
+    : formatPrefix(config.projectLabel, 'Workspace');
+  const taskPrefix = isCompact
+    ? (config.compactTaskLabel ?? '📌 ')
+    : formatPrefix(config.taskLabel, 'Task');
+
   let state;
   if (taskTitle) {
-    const prefix = 'Task: ';
-    const titleBudget = Math.max(0, (config.taskTitleMaxWidth ?? 40) - displayWidth(prefix) - displayWidth(activitySuffix));
-    state = `${prefix}${truncateToWidth(taskTitle, titleBudget)}${activitySuffix}`;
+    const titleBudget = Math.max(0, (config.taskTitleMaxWidth ?? 40) - displayWidth(taskPrefix) - displayWidth(activitySuffix));
+    state = `${taskPrefix}${truncateToWidth(taskTitle, titleBudget)}${activitySuffix}`;
   } else {
     state = `${String(config.state)}${activitySuffix}`;
   }
+
+  const assets = config.showAssets !== false ? {
+    largeImage: config.largeImage,
+    largeText: config.largeImageText,
+    smallImage: config.smallImage || undefined,
+    smallText: config.smallImage ? (config.smallImageText || (activityLabel ? `Status: ${activityLabel}` : undefined)) : undefined
+  } : undefined;
+
   const activity = buildPresence({
     details: projectName
-      ? `${truncate(config.projectLabel || 'Workspace', 64)}: ${truncateToWidth(projectName, config.projectNameMaxWidth)}`
+      ? `${truncate(projectPrefix, 64)}${truncateToWidth(projectName, config.projectNameMaxWidth)}`
       : truncate(config.details, 110),
     state,
     startedAt,
     showElapsedTime: config.showElapsedTime !== false,
     repositoryUrl: config.showRepositoryButton === false ? null : repositoryUrl,
-    repositoryButtonLabel: config.repositoryButtonLabel
+    repositoryButtonLabel: config.repositoryButtonLabel,
+    assets
   });
   return { activity, activityLabel, projectName, taskTitle };
 }

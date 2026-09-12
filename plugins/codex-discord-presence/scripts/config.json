@@ -3,11 +3,18 @@
   "details": "Using Codex",
   "state": "Vibe coding",
   "showProject": true,
-  "projectLabel": "Workspace",
   "showTaskTitle": true,
   "showActivity": true,
   "showElapsedTime": true,
   "useBroker": true,
+  "compactPrefix": true,
+  "compactProjectLabel": "📁 ",
+  "compactTaskLabel": "📌 ",
+  "projectLabel": "Workspace",
+  "taskLabel": "Task",
+  "showAssets": true,
+  "largeImageText": "Codex · Vibe Coding",
   "showRepositoryButton": true,
   "repositoryButtonLabel": "View Repository"
 }
+
