@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { stopLegacyDaemon, stopOwnedDaemon } = require('./daemon-state');
+const { stopOwnedDaemon } = require('./daemon-state');
 const { writeJsonAtomic } = require('./session-state');
 
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
@@ -15,7 +15,6 @@ const brokerStateDir = process.env.DISCORD_PRESENCE_BROKER_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'discord-presence-broker'
 );
-const daemonScript = path.join(__dirname, 'codex-discord-presence.js');
 const sessionsPath = path.join(dataDir, 'active-sessions.json');
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -41,7 +40,7 @@ process.stdin.on('end', () => {
   try {
     fs.rmSync(path.join(brokerStateDir, 'codex.json'), { force: true });
   } catch {}
-  const stopped = stopOwnedDaemon(dataDir) || stopLegacyDaemon(dataDir, daemonScript);
+  const stopped = stopOwnedDaemon(dataDir);
   console.log(stopped ? 'Codex Discord Presence stopped.' : 'Codex Discord Presence is not running.');
 });
 process.stdin.resume();

@@ -25,6 +25,7 @@ const logPath = path.join(dataDir, 'codex-discord-presence.log');
 const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
 const CONTEXT_SCAN_INTERVAL_MS = 30_000;
 const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
+const ACTIVITY_TAIL_READ_BYTES = [64 * 1024, 512 * 1024];
 const scriptPath = path.resolve(__filename);
 const brokerStateDir = path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
@@ -51,7 +52,7 @@ let repositoryCache = { cwd: null, url: null };
 let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
 
 function readConfig() {
-  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', pollIntervalMs: 0, showActivity: true, showElapsedTime: true, useBroker: true, projectNameMaxWidth: 40, taskTitleMaxWidth: 40 };
+  const defaults = { clientId: '', details: 'Using Codex', state: 'Vibe coding', showActivity: true, showElapsedTime: true, useBroker: true, projectNameMaxWidth: 40, taskTitleMaxWidth: 40 };
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
@@ -65,38 +66,15 @@ const log = createRotatingLogger(logPath);
 let pluginEnabledCache = { mtimeMs: null, value: true };
 
 function pluginIsEnabled() {
-  // 外掛可能有多個安裝來源區段（例如 @personal 與 marketplace 版）；
-  // 任一區段未明確寫入 enabled = false 即視為啟用，全部停用時 daemon 才自我終止。
-  // 逐行判斷而非整段 regex，避免 TOML 格式差異（空行、鍵順序）造成誤判。
   try {
     const configTomlPath = path.join(os.homedir(), '.codex', 'config.toml');
-    // 以 mtime 快取解析結果，避免每次 tick 都重讀並逐行掃描整份設定。
     const mtimeMs = fs.statSync(configTomlPath).mtimeMs;
     if (mtimeMs === pluginEnabledCache.mtimeMs) return pluginEnabledCache.value;
     const config = fs.readFileSync(configTomlPath, 'utf8');
-    let sawSection = false;
-    let inPluginSection = false;
-    let sectionDisabled = false;
-    let anyEnabled = false;
-    const closeSection = () => {
-      if (inPluginSection && !sectionDisabled) anyEnabled = true;
-    };
-    for (const line of config.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('[')) {
-        closeSection();
-        inPluginSection = /^\[plugins\."codex-discord-presence@[^"]+"\]$/i.test(trimmed);
-        if (inPluginSection) {
-          sawSection = true;
-          sectionDisabled = false;
-        }
-      } else if (inPluginSection && /^enabled\s*=\s*false\s*(?:#.*)?$/i.test(trimmed)) {
-        sectionDisabled = true;
-      }
-    }
-    closeSection();
-    pluginEnabledCache = { mtimeMs, value: !sawSection || anyEnabled };
-    return pluginEnabledCache.value;
+    const sections = config.match(/\[plugins\."codex-discord-presence@[^"]+"\][^[]*/gi);
+    const value = !sections || sections.some((sec) => !/enabled\s*=\s*false/i.test(sec));
+    pluginEnabledCache = { mtimeMs, value };
+    return value;
   } catch {
     return true;
   }
@@ -174,20 +152,7 @@ function findLatestProject() {
       };
     }
   } catch {}
-  const activeWorkspace = findActiveWorkspace();
-  if (activeWorkspace) return activeWorkspace;
-  try {
-    const project = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-project.json'), 'utf8'));
-    // 回退檔也必須通過新鮮度檢查，避免永久顯示過期的 Workspace。
-    if (typeof project.projectName === 'string' && project.projectName && isFreshSession(project)) {
-      return {
-        name: project.projectName,
-        cwd: project.cwd,
-        sessionId: typeof project.sessionId === 'string' ? project.sessionId : null
-      };
-    }
-  } catch {}
-  return null;
+  return findActiveWorkspace();
 }
 
 function findGitHubRepository(cwd) {
@@ -246,7 +211,6 @@ let dataDirWatcher = null;
 let codexStateWatcher = null;
 let configWatcher = null;
 let scheduledTick = null;
-let optionalPollTimer = null;
 let brokerHeartbeatTimer = null;
 let hostProcessTimer = null;
 let consecutiveMissingHostChecks = 0;
@@ -316,7 +280,6 @@ function refreshConfig() {
     if (mtimeMs === configMtimeMs) return;
     config = readConfig();
     configMtimeMs = mtimeMs;
-    scheduleOptionalPoll();
     log('已重新載入 Discord Presence 設定。');
   } catch (error) {
     log(`無法重新載入設定，保留上一份有效設定：${error.message}`);
@@ -329,25 +292,6 @@ function scheduleTick() {
     scheduledTick = null;
     tick();
   }, 100);
-}
-
-function optionalPollIntervalMs() {
-  const value = Number(config.pollIntervalMs);
-  return Number.isFinite(value) && value > 0 ? Math.max(500, value) : 0;
-}
-
-function scheduleOptionalPoll() {
-  if (optionalPollTimer) {
-    clearTimeout(optionalPollTimer);
-    optionalPollTimer = null;
-  }
-  const intervalMs = optionalPollIntervalMs();
-  if (!intervalMs) return;
-  optionalPollTimer = setTimeout(() => {
-    optionalPollTimer = null;
-    tick();
-    scheduleOptionalPoll();
-  }, intervalMs);
 }
 
 function startBrokerHeartbeat() {
@@ -371,24 +315,20 @@ let hostCheckInFlight = false;
 
 // tasklist 查詢可能耗時 50–300ms；以非同步執行避免阻塞事件迴圈，
 // 讓 timer 與 fs.watch 回呼不受宿主檢查影響。
-function queryWindowsHostRunning(imageIndex, callback) {
-  if (imageIndex >= WINDOWS_HOST_IMAGE_NAMES.length) return callback(false);
-  const imageName = WINDOWS_HOST_IMAGE_NAMES[imageIndex];
-  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${imageName}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
+function queryWindowsHostRunning(callback) {
+  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${WINDOWS_HOST_IMAGE_NAMES[0]}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
     timeout: 2_000,
     windowsHide: true
   }, (error, stdout) => {
     if (error) return callback(null);
-    if (String(stdout).toLocaleLowerCase().includes(`"${imageName.toLocaleLowerCase()}"`)) return callback(true);
-    queryWindowsHostRunning(imageIndex + 1, callback);
+    callback(String(stdout).toLocaleLowerCase().includes(`"${WINDOWS_HOST_IMAGE_NAMES[0].toLocaleLowerCase()}"`));
   });
 }
 
 function checkHostProcess() {
   if (hostCheckInFlight) return;
   hostCheckInFlight = true;
-  queryWindowsHostRunning(0, (running) => {
-    hostCheckInFlight = false;
+  queryWindowsHostRunning((running) => {
     if (running === null) return;
     if (running) {
       hostProcessKnownRunning = true;
@@ -415,7 +355,6 @@ function lastSessionSignalAt() {
   let latest = daemonStartedAt;
   const candidates = [
     path.join(dataDir, 'active-sessions.json'),
-    path.join(dataDir, 'active-project.json'),
     path.join(os.homedir(), '.codex', '.codex-global-state.json')
   ];
   for (const candidate of candidates) {
@@ -431,7 +370,7 @@ function startWatchers() {
   if (!dataDirWatcher) {
     try {
       dataDirWatcher = fs.watch(dataDir, (_eventType, filename) => {
-        if (!filename || filename === 'active-project.json' || filename === 'active-sessions.json') scheduleTick();
+        if (!filename || filename === 'active-sessions.json') scheduleTick();
       });
     } catch {}
   }
@@ -472,15 +411,21 @@ function findActivity(transcriptPath) {
     if (activityCache.transcriptPath === transcriptPath
       && activityCache.mtimeMs === stat.mtimeMs
       && activityCache.size === stat.size) return activityCache.value;
-    const bytes = Math.min(stat.size, 65_536);
-    const buffer = Buffer.alloc(bytes);
-    const descriptor = fs.openSync(transcriptPath, 'r');
-    try {
-      fs.readSync(descriptor, buffer, 0, bytes, stat.size - bytes);
-    } finally {
-      fs.closeSync(descriptor);
+    // 尾端一筆巨型 tool_result（大型 diff、搜尋結果）可能超過 64KB，
+    // 使整段緩衝都是半行而解析不到任何紀錄；此時才擴大讀取範圍，避免每次都付出大讀取成本。
+    let value = 'Working';
+    for (const limit of ACTIVITY_TAIL_READ_BYTES) {
+      const bytes = Math.min(stat.size, limit);
+      const buffer = Buffer.alloc(bytes);
+      const descriptor = fs.openSync(transcriptPath, 'r');
+      try {
+        fs.readSync(descriptor, buffer, 0, bytes, stat.size - bytes);
+      } finally {
+        fs.closeSync(descriptor);
+      }
+      value = classifyActivity(buffer.toString('utf8'));
+      if (value !== 'Working' || bytes >= stat.size) break;
     }
-    const value = classifyActivity(buffer.toString('utf8'));
     activityCache = { transcriptPath, mtimeMs: stat.mtimeMs, size: stat.size, value };
     return value;
   } catch {
@@ -512,13 +457,10 @@ function ensureActiveSession() {
 }
 
 function buildCodexPresence(project) {
-  const workspaceEnabled = config.showWorkspace ?? config.showProject !== false;
-  const projectName = workspaceEnabled === false
-    ? null
-    : truncate(config.workspaceName || project?.name || '', 60);
+  const projectName = config.showProject === false ? null : String(project?.name || '');
   const taskTitle = config.showTaskTitle === false
     ? null
-    : String(config.taskTitle || findTaskTitle(project?.sessionId) || '');
+    : String(findTaskTitle(project?.sessionId) || '');
   const repositoryUrl = project?.cwd ? findGitHubRepository(project.cwd) : null;
   const activityLabel = config.showActivity === false ? null : findActivity(project?.transcriptPath);
   const activitySuffix = activityLabel ? ` · ${activityLabel}` : '';
@@ -528,7 +470,7 @@ function buildCodexPresence(project) {
     const titleBudget = Math.max(0, (config.taskTitleMaxWidth ?? 40) - displayWidth(prefix) - displayWidth(activitySuffix));
     state = `${prefix}${truncateToWidth(taskTitle, titleBudget)}${activitySuffix}`;
   } else {
-    state = `${String(config.taskTitleFallback || config.state)}${activitySuffix}`;
+    state = `${String(config.state)}${activitySuffix}`;
   }
   const activity = buildPresence({
     details: projectName
@@ -570,7 +512,7 @@ function tick() {
     activity: activityLabel,
     titleSource: taskTitle ? 'session_index' : 'fallback',
     sessionIndexWatched: Boolean(codexStateWatcher),
-    updateMode: 'file-watch with optional fallback poll'
+    updateMode: 'file-watch'
   });
 }
 
@@ -579,7 +521,6 @@ function shutdown() {
   codexStateWatcher?.close();
   configWatcher?.close();
   if (scheduledTick) clearTimeout(scheduledTick);
-  if (optionalPollTimer) clearTimeout(optionalPollTimer);
   if (brokerHeartbeatTimer) clearInterval(brokerHeartbeatTimer);
   if (hostProcessTimer) clearInterval(hostProcessTimer);
   clearPublishedActivity();
@@ -593,5 +534,4 @@ if (config.useBroker === false) rpc.connect();
 else ensureBroker();
 startHostMonitor();
 tick();
-scheduleOptionalPoll();
 startBrokerHeartbeat();

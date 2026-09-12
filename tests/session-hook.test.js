@@ -15,6 +15,11 @@ test('Codex hooks 涵蓋完整 SessionStart 與 prompt 更新', () => {
   assert.match(hooks.hooks.UserPromptSubmit[0].hooks[0].command, /--update --start$/);
 });
 
+test('Codex hooks 在 SessionEnd 時執行 stop.js 釋放 presence', () => {
+  assert.equal(hooks.hooks.SessionEnd[0].matcher, 'other');
+  assert.match(hooks.hooks.SessionEnd[0].hooks[0].command, /scripts\/stop\.js"$/);
+});
+
 test('--update 會刷新 session 狀態並正常結束', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-presence-hook-'));
   const dataDir = path.join(root, 'data');

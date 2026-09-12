@@ -55,7 +55,7 @@ Codex stores Presence session data in a single shared local directory. Workspace
 
 Edit `scripts/config.json` inside the installed plugin directory, then restart the presence service.
 
-Content updates are event-driven by default (`pollIntervalMs: 0`). Set `pollIntervalMs` to a positive millisecond value only when a filesystem watcher is unreliable and a fallback poll is needed.
+Content updates are event-driven through filesystem watchers; there is no polling interval to configure.
 
 `useBroker` defaults to `true`: Codex publishes its activity to the shared local Broker, which is the only process that connects to Discord IPC. The plugin bundles the Broker at `scripts/broker.js` and the daemon starts it automatically when no Broker heartbeat is present, so no manual step is required. The Broker enforces a single running instance, so Claude and Codex can both enable it safely. Set `useBroker` to `false` only for direct IPC mode.
 

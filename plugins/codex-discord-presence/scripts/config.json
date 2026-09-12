@@ -4,15 +4,10 @@
   "state": "Vibe coding",
   "showProject": true,
   "projectLabel": "Workspace",
-  "workspaceName": "",
-  "showWorkspace": true,
   "showTaskTitle": true,
   "showActivity": true,
   "showElapsedTime": true,
   "useBroker": true,
-  "taskTitle": "",
-  "taskTitleFallback": "Vibe coding",
   "showRepositoryButton": true,
-  "repositoryButtonLabel": "View Repository",
-  "pollIntervalMs": 0
+  "repositoryButtonLabel": "View Repository"
 }

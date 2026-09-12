@@ -17,23 +17,6 @@ const updateOnly = process.argv.includes('--update');
 const startDaemon = !updateOnly || process.argv.includes('--start');
 fs.mkdirSync(dataDir, { recursive: true });
 
-function getLegacyStartupPath() {
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'codex-discord-presence.cmd');
-  }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.mushroomtw.codex-discord-presence.plist');
-  }
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'autostart', 'codex-discord-presence.desktop');
-}
-
-function removeLegacyStartupEntry() {
-  const file = getLegacyStartupPath();
-  fs.rmSync(file, { force: true });
-}
-
-if (!updateOnly) removeLegacyStartupEntry();
-
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
@@ -65,7 +48,6 @@ process.stdin.on('end', () => {
         .filter((entry) => entry?.id !== activeSession.id).slice(-19);
       sessions.push(activeSession);
       writeJsonAtomic(sessionsPath, sessions);
-      writeJsonAtomic(path.join(dataDir, 'active-project.json'), activeSession);
     }
   } catch {
     // 無法取得 Hook 輸入時，常駐程式會改由工作階段紀錄推測專案名稱。
