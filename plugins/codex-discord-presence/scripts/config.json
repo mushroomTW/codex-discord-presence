@@ -1,7 +1,7 @@
 {
   "clientId": "1526976952970514583",
   "details": "Using Codex",
-  "state": "Vibe coding",
+  "state": "Coding session",
   "showProject": true,
   "showTaskTitle": true,
   "showActivity": true,
@@ -13,7 +13,7 @@
   "projectLabel": "Workspace",
   "taskLabel": "Task",
   "showAssets": true,
-  "largeImageText": "Codex · Vibe Coding",
+  "largeImageText": "Codex · Coding session",
   "showRepositoryButton": true,
   "repositoryButtonLabel": "View Repository"
 }

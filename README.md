@@ -71,11 +71,11 @@ The repository intentionally keeps only the Broker bundled with the plugin. For 
   "compactProjectLabel": "📁 ",
   "compactTaskLabel": "📌 ",
   "showAssets": true,
-  "largeImageText": "Codex · Vibe Coding",
+  "largeImageText": "Codex · Coding session",
   "projectLabel": "Workspace",
   "workspaceName": "",
   "taskTitle": "",
-  "taskTitleFallback": "Vibe coding"
+  "taskTitleFallback": "Coding session"
 }
 ```
 

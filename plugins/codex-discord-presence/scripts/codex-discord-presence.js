@@ -55,7 +55,7 @@ function readConfig() {
   const defaults = {
     clientId: '',
     details: 'Using Codex',
-    state: 'Vibe coding',
+    state: 'Coding session',
     showProject: true,
     projectLabel: 'Workspace',
     showTaskTitle: true,
@@ -68,7 +68,7 @@ function readConfig() {
     taskLabel: 'Task',
     showAssets: true,
     largeImage: 'https://cdn.discordapp.com/app-icons/1526976952970514583/0bc5cf2cdb3b4164f51f3456973764c5.png',
-    largeImageText: 'Codex · Vibe Coding',
+    largeImageText: 'Codex · Coding session',
     projectNameMaxWidth: 40,
     taskTitleMaxWidth: 40
   };
@@ -76,7 +76,7 @@ function readConfig() {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return { ...defaults, ...parsed };
   } catch (error) {
-    throw new Error(`無法讀取 config.json：${error.message}`);
+    throw new Error(`無法讀取 config.json：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -264,7 +264,7 @@ function ensureBroker() {
     }).unref();
     log('已啟動共享 Discord Presence Broker。');
   } catch (error) {
-    log(`無法啟動共享 Broker：${error.message}`);
+    log(`無法啟動共享 Broker：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -301,7 +301,7 @@ function refreshConfig() {
     configMtimeMs = mtimeMs;
     log('已重新載入 Discord Presence 設定。');
   } catch (error) {
-    log(`無法重新載入設定，保留上一份有效設定：${error.message}`);
+    log(`無法重新載入設定，保留上一份有效設定：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -419,7 +419,7 @@ function writeDiagnostic(snapshot) {
     lastDiagnosticSnapshot = serialized;
     fs.writeFileSync(diagnosticPath, JSON.stringify({ updatedAt: new Date().toISOString(), ...snapshot }, null, 2), 'utf8');
   } catch (error) {
-    log(`無法寫入活動診斷快照：${error.message}`);
+    log(`無法寫入活動診斷快照：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
