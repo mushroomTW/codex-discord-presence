@@ -6,8 +6,9 @@ const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { isFreshSession, isWorkspaceCwd, readSessions, selectActiveSession } = require('./session-state');
+const { isFreshSession, readSessions, selectActiveSession } = require('./session-state');
 const { isOwnedDaemon, readDaemonState, removeDaemonState, writeDaemonState } = require('./daemon-state');
+const { createHostMonitor } = require('./shared/host-monitor');
 const { createRotatingLogger } = require('./shared/logger');
 const { DiscordRpc: SharedDiscordRpc } = require('./shared/discord-rpc');
 const { buildPresence, truncate, truncateToWidth, displayWidth } = require('./shared/presence-builder');
@@ -41,9 +42,10 @@ const HOST_CHECK_INTERVAL_MS = 10_000;
 const HOST_MISSING_LIMIT = 3;
 // 開機後 Codex Desktop 可能尚未完成程序註冊；先保留 daemon，避免一次性的 SessionStart hook 被競速吃掉。
 const HOST_STARTUP_GRACE_MS = 60_000;
+// 對話紀錄可能在 hook 觸發後才建立，且 session 時效需隨時間失效；定期重新計算作為檔案監看的保底。
+const PERIODIC_TICK_MS = 10_000;
 const WINDOWS_HOST_IMAGE_NAMES = ['codex.exe'];
 const daemonStartedAt = Date.now();
-const hostMonitorStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
@@ -96,21 +98,6 @@ function pluginIsEnabled() {
     return value;
   } catch {
     return true;
-  }
-}
-
-function findActiveWorkspace() {
-  try {
-    const state = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', '.codex-global-state.json'), 'utf8'));
-    const cwd = Array.isArray(state['active-workspace-roots']) ? state['active-workspace-roots'][0] : null;
-    if (!isWorkspaceCwd(cwd)) return null;
-    const labels = state['electron-workspace-root-labels'];
-    const name = labels && typeof labels[cwd] === 'string' && labels[cwd]
-      ? labels[cwd]
-      : path.basename(cwd);
-    return { name, cwd };
-  } catch {
-    return null;
   }
 }
 
@@ -171,7 +158,8 @@ function findLatestProject() {
       };
     }
   } catch {}
-  return findActiveWorkspace();
+  // 沒有有效、近期的 session 時只顯示泛用動態，不從 Codex 全域狀態推測 Workspace。
+  return null;
 }
 
 function findGitHubRepository(cwd) {
@@ -232,8 +220,7 @@ let configWatcher = null;
 let scheduledTick = null;
 let brokerHeartbeatTimer = null;
 let hostProcessTimer = null;
-let consecutiveMissingHostChecks = 0;
-let hostProcessKnownRunning = null;
+let periodicTickTimer = null;
 let configMtimeMs = 0;
 let lastBrokerActivity = null;
 let lastBrokerActivityLabel = null;
@@ -330,8 +317,6 @@ function startBrokerHeartbeat() {
   }, 1_000);
 }
 
-let hostCheckInFlight = false;
-
 // tasklist 查詢可能耗時 50–300ms；以非同步執行避免阻塞事件迴圈，
 // 讓 timer 與 fs.watch 回呼不受宿主檢查影響。
 function queryWindowsHostRunning(callback) {
@@ -344,30 +329,20 @@ function queryWindowsHostRunning(callback) {
   });
 }
 
-function checkHostProcess() {
-  if (hostCheckInFlight) return;
-  hostCheckInFlight = true;
-  queryWindowsHostRunning((running) => {
-    if (running === null) return;
-    if (running) {
-      hostProcessKnownRunning = true;
-      consecutiveMissingHostChecks = 0;
-      return;
-    }
-    if (Date.now() - hostMonitorStartedAt < HOST_STARTUP_GRACE_MS) return;
-    hostProcessKnownRunning = false;
-    consecutiveMissingHostChecks += 1;
-    if (consecutiveMissingHostChecks >= HOST_MISSING_LIMIT) {
-      log('連續 3 次檢查找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
-      shutdown();
-    }
-  });
-}
+const hostMonitor = createHostMonitor({
+  query: queryWindowsHostRunning,
+  missingLimit: HOST_MISSING_LIMIT,
+  startupGraceMs: HOST_STARTUP_GRACE_MS,
+  onMissing: () => {
+    log('連續 3 次檢查找不到 Codex Desktop 宿主程序，daemon 自動關閉。');
+    shutdown();
+  }
+});
 
 function startHostMonitor() {
   if (process.platform !== 'win32' || hostProcessTimer) return;
-  checkHostProcess();
-  hostProcessTimer = setInterval(checkHostProcess, HOST_CHECK_INTERVAL_MS);
+  hostMonitor.check();
+  hostProcessTimer = setInterval(hostMonitor.check, HOST_CHECK_INTERVAL_MS);
 }
 
 function lastSessionSignalAt() {
@@ -527,34 +502,39 @@ function buildCodexPresence(project) {
 }
 
 function tick() {
-  startWatchers();
-  refreshConfig();
-  syncBrokerConnectionForTick();
-  if (!pluginIsEnabled()) {
-    clearPublishedActivity();
-    removeDaemonState(dataDir, daemonState);
-    setTimeout(() => process.exit(0), 250);
-    return;
+  // tick 由計時器與檔案監看回呼觸發；未攔截的例外會讓整個 daemon 結束。
+  try {
+    startWatchers();
+    refreshConfig();
+    syncBrokerConnectionForTick();
+    if (!pluginIsEnabled()) {
+      clearPublishedActivity();
+      removeDaemonState(dataDir, daemonState);
+      setTimeout(() => process.exit(0), 250);
+      return;
+    }
+    if (!hostMonitor.isKnownRunning() && Date.now() - lastSessionSignalAt() > DAEMON_IDLE_SHUTDOWN_MS) {
+      log(`超過 ${Math.round(DAEMON_IDLE_SHUTDOWN_MS / 60_000)} 分鐘沒有收到任何 Codex session 訊號，判定 Codex 已關閉，daemon 自動關閉。`);
+      shutdown();
+      return;
+    }
+    ensureActiveSession();
+    const project = findLatestProject();
+    const { activity, activityLabel, projectName, taskTitle } = buildCodexPresence(project);
+    if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
+    else rpc.setActivity(activity);
+    writeDiagnostic({
+      activeProject: projectName || null,
+      sessionId: project?.sessionId || null,
+      title: taskTitle || null,
+      activity: activityLabel,
+      titleSource: taskTitle ? 'session_index' : 'fallback',
+      sessionIndexWatched: Boolean(codexStateWatcher),
+      updateMode: 'file-watch'
+    });
+  } catch (error) {
+    log(`更新 Discord Rich Presence 時發生錯誤：${error instanceof Error ? error.message : String(error)}`);
   }
-  if (hostProcessKnownRunning !== true && Date.now() - lastSessionSignalAt() > DAEMON_IDLE_SHUTDOWN_MS) {
-    log(`超過 ${Math.round(DAEMON_IDLE_SHUTDOWN_MS / 60_000)} 分鐘沒有收到任何 Codex session 訊號，判定 Codex 已關閉，daemon 自動關閉。`);
-    shutdown();
-    return;
-  }
-  ensureActiveSession();
-  const project = findLatestProject();
-  const { activity, activityLabel, projectName, taskTitle } = buildCodexPresence(project);
-  if (config.useBroker !== false) publishBrokerState(activity, activityLabel);
-  else rpc.setActivity(activity);
-  writeDiagnostic({
-    activeProject: projectName || null,
-    sessionId: project?.sessionId || null,
-    title: taskTitle || null,
-    activity: activityLabel,
-    titleSource: taskTitle ? 'session_index' : 'fallback',
-    sessionIndexWatched: Boolean(codexStateWatcher),
-    updateMode: 'file-watch'
-  });
 }
 
 function shutdown() {
@@ -564,6 +544,7 @@ function shutdown() {
   if (scheduledTick) clearTimeout(scheduledTick);
   if (brokerHeartbeatTimer) clearInterval(brokerHeartbeatTimer);
   if (hostProcessTimer) clearInterval(hostProcessTimer);
+  if (periodicTickTimer) clearInterval(periodicTickTimer);
   clearPublishedActivity();
   removeDaemonState(dataDir, daemonState);
   process.exit(0);
@@ -576,3 +557,4 @@ else ensureBroker();
 startHostMonitor();
 tick();
 startBrokerHeartbeat();
+periodicTickTimer = setInterval(scheduleTick, PERIODIC_TICK_MS);
