@@ -65,7 +65,7 @@ The repository intentionally keeps only the Broker bundled with the plugin. For 
 
 ```json
 {
-  "showWorkspace": true,
+  "showProject": true,
   "showTaskTitle": true,
   "compactPrefix": true,
   "compactProjectLabel": "📁 ",
@@ -73,22 +73,18 @@ The repository intentionally keeps only the Broker bundled with the plugin. For 
   "showAssets": true,
   "largeImageText": "Codex · Coding session",
   "projectLabel": "Workspace",
-  "workspaceName": "",
-  "taskTitle": "",
-  "taskTitleFallback": "Coding session"
+  "taskLabel": "Task",
+  "state": "Coding session"
 }
 ```
 
 - `compactPrefix` defaults to `true`: uses compact emoji prefixes (`📁 ` for workspace and `📌 ` for task) to maximize available display width for Asian/CJK and long project names. Set to `false` to revert to `Workspace: ` and `Task: `.
 - `compactProjectLabel` and `compactTaskLabel`: customize the prefixes used when `compactPrefix` is enabled.
 - `showAssets` defaults to `true`: enables Discord Rich Presence assets, including hover tooltips (`largeImageText`) on the Codex icon and custom image URLs/keys if configured.
-- Set `showWorkspace` to `true` to display the active workspace. Set it to `false` to use `details` instead.
-- Change `projectLabel` to customize the prefix when `compactPrefix` is `false`, for example `Workspace`.
-- Set `workspaceName` to a non-empty value to override automatic workspace detection, for example `discord-codex`.
-- Set `showTaskTitle` to `true` to display the active Codex task title. Set it to `false` to use the fallback text instead.
-- Set `taskTitle` to a non-empty value to override automatic task-title detection.
-- Change `taskTitleFallback` to customize the text shown when no task title is available.
-- `showProject` remains supported as a legacy alias for `showWorkspace`.
+- Set `showProject` to `true` to display the active workspace. Set it to `false` to use `details` instead.
+- Change `projectLabel` and `taskLabel` to customize the prefixes when `compactPrefix` is `false`, for example `Workspace` and `Task`.
+- Set `showTaskTitle` to `true` to display the active Codex task title. Set it to `false` to use `state` instead.
+- Change `state` to customize the text shown when no task title is available.
 
 
 ### Repository button
