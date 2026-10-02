@@ -24,7 +24,6 @@ fs.mkdirSync(dataDir, { recursive: true });
 const configPath = path.join(scriptDir, 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
 const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
-const CONTEXT_SCAN_INTERVAL_MS = 30_000;
 const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const ACTIVITY_TAIL_READ_BYTES = [64 * 1024, 512 * 1024];
 const scriptPath = path.resolve(__filename);
@@ -51,7 +50,7 @@ const instanceToken = process.argv
   ?.slice('--instance-token='.length);
 
 let repositoryCache = { cwd: null, url: null };
-let taskTitleCache = { sessionId: null, title: null, expiresAt: 0 };
+let taskTitleCache = { sessionId: null, title: null, mtimeMs: null, size: null };
 
 function readConfig() {
   const defaults = {
@@ -103,11 +102,19 @@ function pluginIsEnabled() {
 
 function findTaskTitle(sessionId) {
   if (typeof sessionId !== 'string' || !sessionId) return null;
-  if (taskTitleCache.sessionId === sessionId && taskTitleCache.expiresAt > Date.now()) return taskTitleCache.title;
+  const indexPath = path.join(os.homedir(), '.codex', 'session_index.jsonl');
+  let stat;
+  try {
+    stat = fs.statSync(indexPath);
+  } catch {
+    return null;
+  }
+  // 以索引檔的修改時間與大小作為快取鍵：未變動時不重複讀取最多 512KB 的尾端內容。
+  if (taskTitleCache.sessionId === sessionId && taskTitleCache.mtimeMs === stat.mtimeMs && taskTitleCache.size === stat.size) {
+    return taskTitleCache.title;
+  }
   let title = null;
   try {
-    const indexPath = path.join(os.homedir(), '.codex', 'session_index.jsonl');
-    const stat = fs.statSync(indexPath);
     const bytes = Math.min(stat.size, MAX_SESSION_INDEX_READ_BYTES);
     const buffer = Buffer.alloc(bytes);
     const descriptor = fs.openSync(indexPath, 'r');
@@ -142,7 +149,7 @@ function findTaskTitle(sessionId) {
   } catch {
     // 索引暫時無法讀取時，保留設定檔中的預設備註。
   }
-  taskTitleCache = { sessionId, title, expiresAt: Date.now() + CONTEXT_SCAN_INTERVAL_MS };
+  taskTitleCache = { sessionId, title, mtimeMs: stat.mtimeMs, size: stat.size };
   return title;
 }
 
@@ -224,6 +231,7 @@ let periodicTickTimer = null;
 let configMtimeMs = 0;
 let lastBrokerActivity = null;
 let lastBrokerActivityLabel = null;
+let lastBrokerPayload = null;
 let lastDiagnosticSnapshot = null;
 let activityCache = { transcriptPath: null, mtimeMs: 0, size: 0, value: 'Waiting' };
 let lastUseBroker = null;
@@ -255,11 +263,14 @@ function ensureBroker() {
   }
 }
 
-function publishBrokerState(activity, activityLabel) {
+function publishBrokerState(activity, activityLabel, force = false) {
   lastBrokerActivity = activity;
   lastBrokerActivityLabel = activityLabel;
-  fs.mkdirSync(brokerStateDir, { recursive: true });
   const priority = ({ 'Running tools': 5, Editing: 4, Thinking: 3, 'Reading results': 2, Waiting: 1 })[activityLabel] || 1;
+  // 內容未變時不重寫：心跳會 touch mtime 維持有效，重寫只會多觸發 Broker 的檔案監看。
+  const payload = JSON.stringify({ clientId: config.clientId, priority, activity });
+  if (!force && payload === lastBrokerPayload) return;
+  fs.mkdirSync(brokerStateDir, { recursive: true });
   fs.writeFileSync(path.join(brokerStateDir, 'codex.json'), JSON.stringify({
     source: 'codex',
     clientId: config.clientId,
@@ -267,11 +278,13 @@ function publishBrokerState(activity, activityLabel) {
     updatedAt: Date.now(),
     activity
   }), 'utf8');
+  lastBrokerPayload = payload;
 }
 
 function clearBrokerState() {
   lastBrokerActivity = null;
   lastBrokerActivityLabel = null;
+  lastBrokerPayload = null;
   try { fs.rmSync(path.join(brokerStateDir, 'codex.json'), { force: true }); } catch {}
 }
 
@@ -310,7 +323,7 @@ function startBrokerHeartbeat() {
         const now = new Date();
         fs.utimesSync(statePath, now, now);
       } catch {
-        publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel);
+        publishBrokerState(lastBrokerActivity, lastBrokerActivityLabel, true);
       }
       ensureBroker();
     }
@@ -372,7 +385,6 @@ function startWatchers() {
     try {
       codexStateWatcher = fs.watch(path.join(os.homedir(), '.codex'), (_eventType, filename) => {
         if (filename === 'session_index.jsonl' || filename === '.codex-global-state.json') {
-          taskTitleCache.expiresAt = 0;
           scheduleTick();
         }
       });
