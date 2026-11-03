@@ -1,21 +1,18 @@
-#!/usr/bin/env node
-'use strict';
-
-const childProcess = require('node:child_process');
-const crypto = require('node:crypto');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const {
+import childProcess from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
   acquireStartLock,
   isOwnedDaemon,
   readDaemonState,
   releaseStartLock,
   stopOwnedDaemon,
   writeDaemonState
-} = require('./daemon-state');
+} from './daemon-state.ts';
 
-const scriptDir = __dirname;
+const scriptDir = import.meta.dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'codex-discord-presence'
@@ -35,7 +32,7 @@ if (!acquireStartLock(dataDir)) {
 }
 
 try {
-  const daemonScript = path.join(scriptDir, 'codex-discord-presence.js');
+  const daemonScript = path.join(scriptDir, 'codex-discord-presence.ts');
   if (isOwnedDaemon(readDaemonState(dataDir), dataDir)) {
     console.log('Codex Discord Presence is already running.');
     process.exit(0);
@@ -49,7 +46,7 @@ try {
     env: { ...process.env, CODEX_PRESENCE_DATA: dataDir },
     windowsHide: true
   });
-  if (!Number.isInteger(child.pid)) throw new Error('無法取得常駐程序的 PID。');
+  if (child.pid === undefined || !Number.isInteger(child.pid)) throw new Error('無法取得常駐程序的 PID。');
   try {
     writeDaemonState(dataDir, {
       pid: child.pid,

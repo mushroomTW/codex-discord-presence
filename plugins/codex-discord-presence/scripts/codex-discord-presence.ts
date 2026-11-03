@@ -1,38 +1,35 @@
-#!/usr/bin/env node
-'use strict';
+// 僅使用 Bun 提供的 Node 相容內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
+import childProcess from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { readSessions, selectActiveSession } from './session-state.ts';
+import { isOwnedDaemon, readDaemonState, removeDaemonState, touchDaemonState, writeDaemonState } from './daemon-state.ts';
+import { createHostMonitor } from './shared/host-monitor.ts';
+import { createRotatingLogger } from './shared/logger.ts';
+import { DiscordRpc as SharedDiscordRpc } from './shared/discord-rpc.ts';
+import { buildPresence, truncate, truncateToWidth, displayWidth } from './shared/presence-builder.ts';
+import { classifyActivity } from './activity-classifier.ts';
 
-// 僅使用 Node.js 內建模組，透過 Discord 的本機 IPC 傳送 Rich Presence。
-const childProcess = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const { readSessions, selectActiveSession } = require('./session-state');
-const { isOwnedDaemon, readDaemonState, removeDaemonState, touchDaemonState, writeDaemonState } = require('./daemon-state');
-const { createHostMonitor } = require('./shared/host-monitor');
-const { createRotatingLogger } = require('./shared/logger');
-const { DiscordRpc: SharedDiscordRpc } = require('./shared/discord-rpc');
-const { buildPresence, truncate, truncateToWidth, displayWidth } = require('./shared/presence-builder');
-const { classifyActivity } = require('./activity-classifier');
-
-const scriptDir = __dirname;
+const scriptDir = import.meta.dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'codex-discord-presence'
 );
 fs.mkdirSync(dataDir, { recursive: true });
-// 純 JavaScript 執行檔與設定檔都位於 scripts/。
+// TypeScript 執行檔與設定檔都位於 scripts/。
 const configPath = path.join(scriptDir, 'config.json');
 const logPath = path.join(dataDir, 'codex-discord-presence.log');
 const diagnosticPath = path.join(dataDir, 'codex-discord-presence.diagnostic.json');
 const MAX_SESSION_INDEX_READ_BYTES = 512 * 1024;
 const ACTIVITY_TAIL_READ_BYTES = [64 * 1024, 512 * 1024];
-const scriptPath = path.resolve(__filename);
+const scriptPath = path.resolve(import.meta.filename);
 const brokerStateDir = path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'discord-presence-broker'
 );
 const brokerHeartbeatPath = path.join(brokerStateDir, 'broker.json');
-const brokerScriptPath = path.join(scriptDir, 'broker.js');
+const brokerScriptPath = path.join(scriptDir, 'broker.ts');
 const BROKER_STALE_MS = 15_000;
 // Codex 若被強制關閉（當機、工作管理員結束）不會觸發 SessionEnd hook。
 // Windows 會額外監看 Codex Desktop 宿主，並以 session 訊號閒置時間作為跨平台保底。
@@ -43,16 +40,48 @@ const HOST_MISSING_LIMIT = 3;
 const HOST_STARTUP_GRACE_MS = 60_000;
 // 對話紀錄可能在 hook 觸發後才建立，且 session 時效需隨時間失效；定期重新計算作為檔案監看的保底。
 const PERIODIC_TICK_MS = 10_000;
-const WINDOWS_HOST_IMAGE_NAMES = ['codex.exe'];
+const WINDOWS_HOST_IMAGE_NAME = 'codex.exe';
 const daemonStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
   ?.slice('--instance-token='.length);
 
-let repositoryCache = { cwd: null, url: null };
-let taskTitleCache = { sessionId: null, title: null, mtimeMs: null, size: null };
+interface PresenceConfig {
+  clientId: string;
+  details: string;
+  state: string;
+  showProject: boolean;
+  projectLabel?: string;
+  showTaskTitle: boolean;
+  showActivity: boolean;
+  showElapsedTime: boolean;
+  useBroker: boolean;
+  compactPrefix: boolean;
+  compactProjectLabel?: string;
+  compactTaskLabel?: string;
+  taskLabel?: string;
+  showAssets: boolean;
+  largeImage?: string;
+  largeImageText?: string;
+  smallImage?: string;
+  smallImageText?: string;
+  showRepositoryButton?: boolean;
+  repositoryButtonLabel?: string;
+  projectNameMaxWidth: number;
+  taskTitleMaxWidth?: number;
+}
 
-function readConfig() {
+interface ActiveProject {
+  name: string;
+  cwd: string;
+  sessionId: string | null;
+  transcriptPath: string | null;
+}
+
+let repositoryCache: { cwd: string | null; url: string | null } = { cwd: null, url: null };
+let taskTitleCache: { sessionId: string | null; title: string | null; mtimeMs: number | null; size: number | null } = { sessionId: null, title: null, mtimeMs: null, size: null };
+
+function readConfig(): PresenceConfig {
   const defaults = {
     clientId: '',
     details: 'Using Codex',
@@ -83,7 +112,7 @@ function readConfig() {
 
 const log = createRotatingLogger(logPath);
 
-let pluginEnabledCache = { mtimeMs: null, value: true };
+let pluginEnabledCache: { mtimeMs: number | null; value: boolean } = { mtimeMs: null, value: true };
 
 function pluginIsEnabled() {
   try {
@@ -100,7 +129,7 @@ function pluginIsEnabled() {
   }
 }
 
-function findTaskTitle(sessionId) {
+function findTaskTitle(sessionId: unknown) {
   if (typeof sessionId !== 'string' || !sessionId) return null;
   const indexPath = path.join(os.homedir(), '.codex', 'session_index.jsonl');
   let stat;
@@ -113,7 +142,7 @@ function findTaskTitle(sessionId) {
   if (taskTitleCache.sessionId === sessionId && taskTitleCache.mtimeMs === stat.mtimeMs && taskTitleCache.size === stat.size) {
     return taskTitleCache.title;
   }
-  let title = null;
+  let title: string | null = null;
   try {
     const bytes = Math.min(stat.size, MAX_SESSION_INDEX_READ_BYTES);
     const buffer = Buffer.alloc(bytes);
@@ -153,10 +182,11 @@ function findTaskTitle(sessionId) {
   return title;
 }
 
-function findLatestProject() {
+function findLatestProject(): ActiveProject | null {
   try {
     const activeSession = selectActiveSession(readSessions(path.join(dataDir, 'active-sessions.json')));
-    if (activeSession) {
+    // selectActiveSession 只回傳 cwd 為有效 Workspace 的 session。
+    if (activeSession && typeof activeSession.cwd === 'string') {
       return {
         name: typeof activeSession.projectName === 'string' && activeSession.projectName ? activeSession.projectName : path.basename(activeSession.cwd),
         cwd: activeSession.cwd,
@@ -169,7 +199,7 @@ function findLatestProject() {
   return null;
 }
 
-function findGitHubRepository(cwd) {
+function findGitHubRepository(cwd: string) {
   if (repositoryCache.cwd === cwd) return repositoryCache.url;
   const result = childProcess.spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], { // NOSONAR javascript:S4036 - 本機工作區查詢遠端 URL，cwd 為已驗證的 Workspace 路徑，非 PATH 注入邊界
     encoding: 'utf8',
@@ -206,7 +236,7 @@ if (process.argv.includes('--status')) {
 }
 
 if (!instanceToken || instanceToken.length < 16) {
-  console.error('請使用 start.js 啟動 Discord Presence。');
+  console.error('請使用 start.ts 啟動 Discord Presence。');
   process.exit(1);
 }
 
@@ -220,21 +250,22 @@ const daemonState = { pid: process.pid, instanceToken, scriptPath };
 writeDaemonState(dataDir, daemonState);
 const rpc = new SharedDiscordRpc(config.clientId, { log });
 let active = false;
-let startedAt = null;
-let dataDirWatcher = null;
-let codexStateWatcher = null;
-let configWatcher = null;
-let scheduledTick = null;
-let brokerHeartbeatTimer = null;
-let hostProcessTimer = null;
-let periodicTickTimer = null;
+type Activity = ReturnType<typeof buildPresence>;
+let startedAt: number | null = null;
+let dataDirWatcher: fs.FSWatcher | null = null;
+let codexStateWatcher: fs.FSWatcher | null = null;
+let configWatcher: fs.FSWatcher | null = null;
+let scheduledTick: ReturnType<typeof setTimeout> | null = null;
+let brokerHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let hostProcessTimer: ReturnType<typeof setInterval> | null = null;
+let periodicTickTimer: ReturnType<typeof setInterval> | null = null;
 let configMtimeMs = 0;
-let lastBrokerActivity = null;
-let lastBrokerActivityLabel = null;
-let lastBrokerPayload = null;
-let lastDiagnosticSnapshot = null;
-let activityCache = { transcriptPath: null, mtimeMs: 0, size: 0, value: 'Waiting' };
-let lastUseBroker = null;
+let lastBrokerActivity: Activity | null = null;
+let lastBrokerActivityLabel: string | null = null;
+let lastBrokerPayload: string | null = null;
+let lastDiagnosticSnapshot: string | null = null;
+let activityCache: { transcriptPath: string | null; mtimeMs: number; size: number; value: string } = { transcriptPath: null, mtimeMs: 0, size: 0, value: 'Waiting' };
+let lastUseBroker: boolean | null = null;
 let brokerSpawnedAt = 0;
 
 function isBrokerAlive() {
@@ -263,10 +294,12 @@ function ensureBroker() {
   }
 }
 
-function publishBrokerState(activity, activityLabel, force = false) {
+const ACTIVITY_PRIORITIES: Record<string, number> = { 'Running tools': 5, Editing: 4, Thinking: 3, 'Reading results': 2, Waiting: 1 };
+
+function publishBrokerState(activity: Activity, activityLabel: string | null, force = false) {
   lastBrokerActivity = activity;
   lastBrokerActivityLabel = activityLabel;
-  const priority = ({ 'Running tools': 5, Editing: 4, Thinking: 3, 'Reading results': 2, Waiting: 1 })[activityLabel] || 1;
+  const priority = (activityLabel && ACTIVITY_PRIORITIES[activityLabel]) || 1;
   // 內容未變時不重寫：心跳會 touch mtime 維持有效，重寫只會多觸發 Broker 的檔案監看。
   const payload = JSON.stringify({ clientId: config.clientId, priority, activity });
   if (!force && payload === lastBrokerPayload) return;
@@ -332,13 +365,13 @@ function startBrokerHeartbeat() {
 
 // tasklist 查詢可能耗時 50–300ms；以非同步執行避免阻塞事件迴圈，
 // 讓 timer 與 fs.watch 回呼不受宿主檢查影響。
-function queryWindowsHostRunning(callback) {
-  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${WINDOWS_HOST_IMAGE_NAMES[0]}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
+function queryWindowsHostRunning(callback: (running: boolean | null) => void) {
+  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${WINDOWS_HOST_IMAGE_NAME}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
     timeout: 2_000,
     windowsHide: true
   }, (error, stdout) => {
     if (error) return callback(null);
-    callback(String(stdout).toLocaleLowerCase().includes(`"${WINDOWS_HOST_IMAGE_NAMES[0].toLocaleLowerCase()}"`));
+    callback(String(stdout).toLocaleLowerCase().includes(`"${WINDOWS_HOST_IMAGE_NAME.toLocaleLowerCase()}"`));
   });
 }
 
@@ -399,7 +432,7 @@ function startWatchers() {
   }
 }
 
-function writeDiagnostic(snapshot) {
+function writeDiagnostic(snapshot: Record<string, unknown>) {
   try {
     const serialized = JSON.stringify(snapshot);
     if (serialized === lastDiagnosticSnapshot) return;
@@ -410,7 +443,7 @@ function writeDiagnostic(snapshot) {
   }
 }
 
-function findActivity(transcriptPath) {
+function findActivity(transcriptPath: string | null | undefined) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) return 'Waiting';
   try {
     const stat = fs.statSync(transcriptPath);
@@ -462,12 +495,12 @@ function ensureActiveSession() {
   }
 }
 
-function formatPrefix(label, fallback) {
+function formatPrefix(label: string | undefined, fallback: string) {
   const text = String(label || fallback).trimEnd();
   return text.endsWith(':') ? `${text} ` : `${text}: `;
 }
 
-function buildCodexPresence(project) {
+function buildCodexPresence(project: ActiveProject | null) {
   const projectName = config.showProject === false ? null : String(project?.name || '');
   const taskTitle = config.showTaskTitle === false
     ? null

@@ -15,3 +15,5 @@ Thumbs.db
 .omc
 .scannerwork/
 coverage/
+# 開發相依套件
+node_modules/

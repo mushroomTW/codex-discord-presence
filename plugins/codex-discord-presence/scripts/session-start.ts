@@ -1,13 +1,10 @@
-#!/usr/bin/env node
-'use strict';
+import childProcess from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isWorkspaceCwd, pruneSessions, updateSessions } from './session-state.ts';
 
-const childProcess = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { isWorkspaceCwd, pruneSessions, updateSessions } = require('./session-state');
-
-const scriptDir = __dirname;
+const scriptDir = import.meta.dirname;
 const dataDir = process.env.CODEX_PRESENCE_DATA || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'codex-discord-presence'
@@ -54,7 +51,7 @@ process.stdin.on('end', () => {
   }
 
   if (startDaemon) {
-    childProcess.spawn(process.execPath, [path.join(scriptDir, 'start.js')], {
+    childProcess.spawn(process.execPath, [path.join(scriptDir, 'start.ts')], {
       cwd: scriptDir,
       detached: true,
       stdio: 'ignore',

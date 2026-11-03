@@ -1,15 +1,13 @@
-'use strict';
+import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
 
-const assert = require('node:assert/strict');
-const childProcess = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
-const test = require('node:test');
-
-const repositoryRoot = path.resolve(__dirname, '..');
+const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const pluginRoot = path.join(repositoryRoot, 'plugins', 'codex-discord-presence');
 
-function readJson(relativePath) {
+function readJson(relativePath: string): any {
   return JSON.parse(fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8'));
 }
 
@@ -33,14 +31,14 @@ test('Codex 發布 metadata 與必要檔案完整', () => {
 
 test('Codex hooks 僅透過 Bun 引用存在的腳本', () => {
   const hooks = readJson('plugins/codex-discord-presence/hooks/hooks.json').hooks;
-  const commands = Object.values(hooks).flatMap((groups) => groups.flatMap((group) => group.hooks));
+  const commands = Object.values(hooks).flatMap((groups: any) => groups.flatMap((group: any) => group.hooks));
   assert.ok(commands.length > 0);
   for (const hook of commands) {
     assert.equal(hook.type, 'command');
     assert.match(hook.command, /^bun /, `Hook 必須透過 Bun 執行：${hook.command}`);
     assert.ok(Number(hook.timeout) > 0, `Hook 超時必須大於 0：${hook.timeout}`);
     assert.ok(Number(hook.timeout) <= 10, `Hook 超時必須不超過 10 秒：${hook.timeout}`);
-    const match = hook.command.match(/\$\{PLUGIN_ROOT\}\/([^" ]+\.js)/);
+    const match = hook.command.match(/\$\{PLUGIN_ROOT\}\/([^" ]+\.ts)/);
     assert.ok(match, `無法解析 Hook 命令：${hook.command}`);
     assert.ok(fs.existsSync(path.join(pluginRoot, match[1])), `Hook 腳本不存在：${match[1]}`);
   }

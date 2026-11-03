@@ -1,7 +1,5 @@
-'use strict';
-
 // 從 Codex 對話紀錄尾端的 JSONL 內容推斷目前的活動狀態。
-function classifyActivity(text) {
+export function classifyActivity(text: unknown): string {
   for (const value of String(text).split(/\r?\n/).reverse()) {
     try {
       const record = JSON.parse(value);
@@ -17,5 +15,3 @@ function classifyActivity(text) {
   }
   return 'Working';
 }
-
-module.exports = { classifyActivity };

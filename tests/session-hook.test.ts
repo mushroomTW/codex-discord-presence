@@ -1,23 +1,21 @@
-'use strict';
+import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
 
-const assert = require('node:assert/strict');
-const childProcess = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-
-const hookPath = path.resolve(__dirname, '../plugins/codex-discord-presence/scripts/session-start.js');
-const hooks = require('../plugins/codex-discord-presence/hooks/hooks.json');
+const hookPath = path.resolve(import.meta.dirname, '../plugins/codex-discord-presence/scripts/session-start.ts');
+const hooks = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../plugins/codex-discord-presence/hooks/hooks.json'), 'utf8'));
 
 test('Codex hooks 涵蓋完整 SessionStart 與 prompt 更新', () => {
   assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear|compact');
   assert.match(hooks.hooks.UserPromptSubmit[0].hooks[0].command, /--update --start$/);
 });
 
-test('Codex hooks 在 SessionEnd 時執行 stop.js 釋放 presence', () => {
+test('Codex hooks 在 SessionEnd 時執行 stop.ts 釋放 presence', () => {
   assert.equal(hooks.hooks.SessionEnd[0].matcher, 'other');
-  assert.match(hooks.hooks.SessionEnd[0].hooks[0].command, /scripts\/stop\.js"$/);
+  assert.match(hooks.hooks.SessionEnd[0].hooks[0].command, /scripts\/stop\.ts"$/);
 });
 
 test('--update 會刷新 session 狀態並正常結束', () => {
