@@ -31,12 +31,13 @@ test('Codex 發布 metadata 與必要檔案完整', () => {
   }
 });
 
-test('Codex hooks 僅引用存在的 Node.js 腳本', () => {
+test('Codex hooks 僅透過 Bun 引用存在的腳本', () => {
   const hooks = readJson('plugins/codex-discord-presence/hooks/hooks.json').hooks;
   const commands = Object.values(hooks).flatMap((groups) => groups.flatMap((group) => group.hooks));
   assert.ok(commands.length > 0);
   for (const hook of commands) {
     assert.equal(hook.type, 'command');
+    assert.match(hook.command, /^bun /, `Hook 必須透過 Bun 執行：${hook.command}`);
     assert.ok(Number(hook.timeout) > 0, `Hook 超時必須大於 0：${hook.timeout}`);
     assert.ok(Number(hook.timeout) <= 10, `Hook 超時必須不超過 10 秒：${hook.timeout}`);
     const match = hook.command.match(/\$\{PLUGIN_ROOT\}\/([^" ]+\.js)/);

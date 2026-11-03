@@ -16,7 +16,7 @@ You are responsible for:
 
 - Complying with the terms, policies, and applicable rules of Codex, Discord, and any other services you use with the Plugin.
 - Ensuring that the Rich Presence details you choose to display do not expose confidential, personal, or sensitive information.
-- Maintaining a compatible installation of Codex, Discord, and Node.js.
+- Maintaining a compatible installation of Codex, Discord, and Bun.
 
 ## Availability and Changes
 

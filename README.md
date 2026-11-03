@@ -2,13 +2,13 @@
 
 ## Prerequisites
 
-Before installing this plugin, install **Node.js LTS** (Node.js 20 or later is recommended), because the plugin hooks and Discord Presence daemon run through `node`. Verify the installation in a terminal:
+Before installing this plugin, install **Bun** (Bun 1.4 or later is recommended, see https://bun.sh), because the plugin hooks and Discord Presence daemon run through `bun`. Verify the installation in a terminal:
 
 ```text
-node --version
+bun --version
 ```
 
-If the `node` command is not found, install Node.js and restart Codex.
+If the `bun` command is not found, install Bun and restart Codex.
 
 <p align="center">
   <img src="plugins/codex-discord-presence/assets/discord-wumpus-icon-transparent.png" alt="Discord Wumpus" width="220">
@@ -41,11 +41,11 @@ The plugin includes the Discord Application created by mushroomTW. Users do not 
 
 ## Controls
 
-- Start: `node ./scripts/start.js`
-- Stop: `node ./scripts/stop.js`
-- Status: `node ./scripts/codex-discord-presence.js --status`
+- Start: `bun ./scripts/start.js`
+- Stop: `bun ./scripts/stop.js`
+- Status: `bun ./scripts/codex-discord-presence.js --status`
 
-The plugin uses Node.js and Discord IPC only. It supports Windows, macOS, and Linux.
+The plugin uses Bun (with its Node.js-compatible built-in modules) and Discord IPC only. It supports Windows, macOS, and Linux.
 
 The Rich Presence service starts with a Codex session and stops when that session ends. The plugin does not create an operating-system startup entry, so it can be installed, disabled, and removed through Codex without leaving a startup task behind.
 

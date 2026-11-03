@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\"",
+            "command": "bun \"${PLUGIN_ROOT}/scripts/session-start.js\"",
             "timeout": 10,
             "statusMessage": "Starting Discord Rich Presence"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/session-start.js\" --update --start",
+            "command": "bun \"${PLUGIN_ROOT}/scripts/session-start.js\" --update --start",
             "timeout": 10,
             "statusMessage": "Updating Discord Rich Presence"
           }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/stop.js\"",
+            "command": "bun \"${PLUGIN_ROOT}/scripts/stop.js\"",
             "timeout": 10,
             "statusMessage": "Stopping Discord Rich Presence"
           }
