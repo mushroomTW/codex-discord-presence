@@ -36,7 +36,7 @@ if (!acquireStartLock(dataDir)) {
 
 try {
   const daemonScript = path.join(scriptDir, 'codex-discord-presence.js');
-  if (isOwnedDaemon(readDaemonState(dataDir))) {
+  if (isOwnedDaemon(readDaemonState(dataDir), dataDir)) {
     console.log('Codex Discord Presence is already running.');
     process.exit(0);
   }
