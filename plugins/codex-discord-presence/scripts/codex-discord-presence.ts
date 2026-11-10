@@ -40,7 +40,10 @@ const HOST_MISSING_LIMIT = 3;
 const HOST_STARTUP_GRACE_MS = 60_000;
 // 對話紀錄可能在 hook 觸發後才建立，且 session 時效需隨時間失效；定期重新計算作為檔案監看的保底。
 const PERIODIC_TICK_MS = 10_000;
-const WINDOWS_HOST_IMAGE_NAME = 'codex.exe';
+// 背景常駐的 `codex.exe app-server`（位於 ~/.codex/packages）與桌面版同名（tasklist 不分大小寫），
+// 關閉 Codex Desktop 後仍會存活，因此必須以安裝路徑辨識桌面版主程式 …\app\Codex.exe。
+const WINDOWS_HOST_PATH_PATTERN = /\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\Codex\.exe$/i;
+const WINDOWS_HOST_QUERY_SCRIPT = 'Get-Process -Name Codex -ErrorAction SilentlyContinue | ForEach-Object { $_.Path }';
 const daemonStartedAt = Date.now();
 const instanceToken = process.argv
   .find((argument) => argument.startsWith('--instance-token='))
@@ -363,15 +366,15 @@ function startBrokerHeartbeat() {
   }, 1_000);
 }
 
-// tasklist 查詢可能耗時 50–300ms；以非同步執行避免阻塞事件迴圈，
+// PowerShell 查詢約耗時 0.5–1 秒；以非同步執行避免阻塞事件迴圈，
 // 讓 timer 與 fs.watch 回呼不受宿主檢查影響。
 function queryWindowsHostRunning(callback: (running: boolean | null) => void) {
-  childProcess.execFile('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${WINDOWS_HOST_IMAGE_NAME}`], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 tasklist，參數為固定映像名稱
-    timeout: 2_000,
+  childProcess.execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_HOST_QUERY_SCRIPT], { // NOSONAR javascript:S4036 - 本機宿主存活檢查，執行固定系統指令 powershell，參數為固定腳本
+    timeout: 5_000,
     windowsHide: true
   }, (error, stdout) => {
     if (error) return callback(null);
-    callback(String(stdout).toLocaleLowerCase().includes(`"${WINDOWS_HOST_IMAGE_NAME.toLocaleLowerCase()}"`));
+    callback(String(stdout).split(/\r?\n/).some((line) => WINDOWS_HOST_PATH_PATTERN.test(line.trim())));
   });
 }
 
