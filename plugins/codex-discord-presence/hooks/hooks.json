@@ -33,7 +33,7 @@
           {
             "type": "command",
             "command": "bun \"${PLUGIN_ROOT}/scripts/stop.ts\"",
-            "timeout": 10,
+            "timeout": 3,
             "statusMessage": "Stopping Discord Rich Presence"
           }
         ]

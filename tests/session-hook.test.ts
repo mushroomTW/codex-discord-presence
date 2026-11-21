@@ -16,6 +16,7 @@ test('Codex hooks 涵蓋完整 SessionStart 與 prompt 更新', () => {
 test('Codex hooks 在 SessionEnd 時執行 stop.ts 釋放 presence', () => {
   assert.equal(hooks.hooks.SessionEnd[0].matcher, 'other');
   assert.match(hooks.hooks.SessionEnd[0].hooks[0].command, /scripts\/stop\.ts"$/);
+  assert.equal(hooks.hooks.SessionEnd[0].hooks[0].timeout, 3);
 });
 
 test('--update 會刷新 session 狀態並正常結束', () => {
